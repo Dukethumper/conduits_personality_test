@@ -34,22 +34,47 @@ DEFAULT_DOMAIN_MAP = {
 
 # ====================== Header normalization ======================
 
+# more variants + snake-case versions
 HEADER_TO_CANON = {
+    # motivations
     "sattva":"Sattva","rajas":"Rajas","tamas":"Tamas",
-    "prajna":"Prajna","prajna-logos":"Prajna",
-    "personal unconscious":"Personal_Unconscious","personal_unconscious":"Personal_Unconscious","pers.u":"Personal_Unconscious",
-    "collective unconscious":"Collective_Unconscious","collective_unconscious":"Collective_Unconscious","coll.u":"Collective_Unconscious",
+    "prajna":"Prajna","prajna logos":"Prajna","prajna-logos":"Prajna",
+    "personal unconscious":"Personal_Unconscious","personal_unconscious":"Personal_Unconscious","pers.u":"Personal_Unconscious","pers u":"Personal_Unconscious",
+    "collective unconscious":"Collective_Unconscious","collective_unconscious":"Collective_Unconscious","coll.u":"Collective_Unconscious","coll u":"Collective_Unconscious",
     "cheng":"Cheng","wu wei":"Wu_Wei","wu_wei":"Wu_Wei","anatta":"Anatta",
-    "relational balance":"Relational_Balance","rel.bal":"Relational_Balance",
+    "relational balance":"Relational_Balance","relational_balance":"Relational_Balance","rel.bal":"Relational_Balance","rel bal":"Relational_Balance",
     "thymos":"Thymos","eros":"Eros",
+    # strategies
     "conform":"Conform","control":"Control","flow":"Flow","risk":"Risk",
+    # orientations
     "inward":"Inward","outward":"Outward","surrender":"Surrender",
     "relationship":"Relationship","relational":"Relationship","relationship value":"Relationship",
-    "self insight":"Self_Insight","self_insight":"Self_Insight",
-    "self serving bias":"Self_Serving_Bias","self-serving bias":"Self_Serving_Bias","self_serving_bias":"Self_Serving_Bias",
+    # self-scales
+    "self insight":"Self_Insight","self_insight":"Self_Insight","self-insight":"Self_Insight","self–insight":"Self_Insight",
+    "self serving bias":"Self_Serving_Bias","self-serving bias":"Self_Serving_Bias","self_serving_bias":"Self_Serving_Bias","self-serving bias":"Self_Serving_Bias",
 }
+
+# Robust canon: strip BOM, normalize punctuation/parentheticals, fuzzy contains
 def canon(name: str) -> Optional[str]:
-    return HEADER_TO_CANON.get(name.strip().lower())
+    if not name:
+        return None
+    s = name.strip().lstrip("\ufeff")  # strip UTF-8 BOM if present
+    s = s.replace("—","-").replace("–","-").replace("：",":")
+    s = re.sub(r"\(.*?\)", " ", s)     # drop parentheticals
+    s = s.lower()
+    s = re.sub(r"[^a-z0-9_ :\-]+", " ", s)
+    s = s.replace(":", " ").replace("-", " ")
+    s = re.sub(r"\s+", " ", s).strip()
+    # exact
+    if s in HEADER_TO_CANON:
+        return HEADER_TO_CANON[s]
+    # fuzzy: longest-key containment
+    best = None
+    for k, v in HEADER_TO_CANON.items():
+        if k in s:
+            if best is None or len(k) > len(best[0]):
+                best = (k, v)
+    return best[1] if best else None
 
 # ====================== Centroids (embedded) ======================
 
@@ -189,17 +214,25 @@ def parse_txt_questions(raw: str) -> Dict:
       Short-form endpoints: [L=Never][R=Always]
       Optional per-item override: [DIM=Rajas]
     """
+    # Strip BOM if present (GitHub files sometimes include it)
+    raw = raw.lstrip("\ufeff")
     lines = [l.rstrip() for l in raw.splitlines()]
-    spec = {"scale": {"min":1, "max":7, "step":1}, "questions":[]}
+    spec = {"scale": {"min":1, "max":7, "step":1}, "questions":[], "parse_report": {"unknown_headers":[], "items_without_dim":[]}}
     cur_dim: Optional[str] = None
     counts: Dict[str,int] = {}
 
-    for line in lines:
+    for idx, line in enumerate(lines, start=1):
         s = line.strip()
         if not s:
             continue
-        if s.endswith(":"):
-            cur_dim = canon(s[:-1])
+        if s.endswith(":") or s.endswith("："):
+            header_txt = s[:-1]
+            maybe = canon(header_txt)
+            if maybe is None:
+                spec["parse_report"]["unknown_headers"].append({"line": idx, "text": line})
+                cur_dim = None
+            else:
+                cur_dim = maybe
             continue
 
         text = s
@@ -209,20 +242,21 @@ def parse_txt_questions(raw: str) -> Dict:
 
         dim = canon(kvs.get("DIM", cur_dim or ""))
         if dim is None:
+            spec["parse_report"]["items_without_dim"].append({"line": idx, "text": line})
             continue
 
         vmin = int(kvs.get("MIN", "1"))
         vmax = int(kvs.get("MAX", "7"))
         vstep = int(kvs.get("STEP", "1"))
         if vmax <= vmin or vstep <= 0:
-            raise ValueError(f"Bad range for '{text}': MIN={vmin} MAX={vmax} STEP={vstep}")
+            raise ValueError(f"Bad range for '{text}' on line {idx}: MIN={vmin} MAX={vmax} STEP={vstep}")
         npoints = (vmax - vmin) // vstep + 1
 
         labels: Optional[List[str]] = None
         if "LABELS" in kvs:
             labels = [p.strip() for p in kvs["LABELS"].split("|")]
             if len(labels) != npoints:
-                raise ValueError(f"LABELS count ({len(labels)}) must equal number of points ({npoints}) for '{text}'")
+                raise ValueError(f"LABELS count ({len(labels)}) must equal number of points ({npoints}) for '{text}' (line {idx})")
         else:
             L = kvs.get("L"); R = kvs.get("R")
             if L and R and npoints == 7:
@@ -283,11 +317,10 @@ def to_result_df(res: Dict, pid: str) -> pd.DataFrame:
 # ====================== Load questions from repo or override ======================
 
 def load_questions_from_repo() -> Dict:
-    """Reads questions from local repo file. Path from env QUESTIONS_PATH or './questions.txt'."""
     q_path = Path(os.getenv("QUESTIONS_PATH", "questions.txt"))
     if not q_path.exists():
         raise FileNotFoundError(f"questions file not found at: {q_path.resolve()}")
-    text = q_path.read_text(encoding="utf-8")
+    text = q_path.read_text(encoding="utf-8").lstrip("\ufeff")
     return parse_txt_questions(text)
 
 # ====================== UI ======================
@@ -301,7 +334,7 @@ with st.sidebar:
     q_up = st.file_uploader("Override questions.txt (optional)", type=["txt"])
     norms_up = st.file_uploader("Optional norms.csv", type=["csv"])
     participant_id = st.text_input("Participant ID", value="P001")
-    st.caption("Two-column layout. Labels above sliders update live as you move them.")
+    st.caption("Compact 2-column layout. Labels above sliders update live.")
 
 # Load spec (repo first; uploader overrides if provided)
 try:
@@ -310,14 +343,25 @@ except Exception as e:
     st.error(f"Failed to load/parse questions: {e}")
     st.stop()
 
+# ---- Parsing report (helps catch header/label issues) ----
+rep = spec.get("parse_report", {})
+if rep.get("unknown_headers") or rep.get("items_without_dim"):
+    with st.expander("Parsing report (click to review)"):
+        if rep.get("unknown_headers"):
+            st.warning("Unknown headers (not matched to a dimension):")
+            st.json(rep["unknown_headers"])
+        if rep.get("items_without_dim"):
+            st.warning("Items that were skipped because no known dimension was active:")
+            st.json(rep["items_without_dim"])
+
 items: List[Dict] = list(spec.get("questions", []))
 if not items:
-    st.error("No items parsed. Check your headers (e.g., 'Sattva:') and item lines.")
+    st.error("No items parsed. Check your headers (e.g., 'Relational Balance:' / 'Self Insight:') and item lines.")
     st.stop()
 
 # Stable per-user shuffle
 def stable_shuffle(items: List[Dict], pid: str, spec_obj: Dict) -> List[Dict]:
-    spec_bytes = json.dumps(spec_obj, sort_keys=True).encode("utf-8")
+    spec_bytes = json.dumps({k:v for k,v in spec_obj.items() if k != "parse_report"}, sort_keys=True).encode("utf-8")
     seed_hex = hashlib.sha256((pid + "|").encode("utf-8") + spec_bytes).hexdigest()[:16]
     seed_int = int(seed_hex, 16)
     rng = random.Random(seed_int)
@@ -325,7 +369,7 @@ def stable_shuffle(items: List[Dict], pid: str, spec_obj: Dict) -> List[Dict]:
     rng.shuffle(out)
     return out
 
-spec_fingerprint = hashlib.sha256(json.dumps(spec, sort_keys=True).encode("utf-8")).hexdigest()
+spec_fingerprint = hashlib.sha256(json.dumps({k:v for k,v in spec.items() if k != "parse_report"}, sort_keys=True).encode("utf-8")).hexdigest()
 if "shuffle_meta" not in st.session_state or st.session_state.shuffle_meta != (participant_id, spec_fingerprint):
     st.session_state.shuffle_meta = (participant_id, spec_fingerprint)
     st.session_state.shuffled_items = stable_shuffle(items, participant_id, spec)
@@ -396,7 +440,7 @@ if not compute:
 person_scales = aggregate_to_scales(responses, spec)
 missing = [d for d in ALL_DIMS + SELF_SCALES if np.isnan(person_scales.get(d, np.nan))]
 if missing:
-    st.error(f"Missing responses for: {missing}\n\nAdd at least one item for each missing dimension.")
+    st.error(f"Missing responses for: {missing}\n\nUse the 'Parsing report' expander above to see which headers/items were not recognized.")
     st.stop()
 
 # Norms (optional)
@@ -408,7 +452,15 @@ if norms_up is not None:
         st.error(f"Failed to read norms.csv: {e}")
         st.stop()
 
-# Score
+# ====================== Prepare archetypes & score ======================
+
+def prepare_archetype_pieces(z: ZParams) -> Tuple[pd.DataFrame,pd.DataFrame]:
+    arch_mz = rowwise_motivation_z(ARCHETYPE_CENTROIDS)
+    arch_std = ARCHETYPE_CENTROIDS.copy()
+    for c in ALL_DIMS:
+        arch_std[c] = (arch_std[c] - z.mean[c]) / z.std[c]
+    return arch_mz, arch_std
+
 try:
     z = zparams_from_norms_or_single(person_scales, norms_df)
     arch_mz, arch_std = prepare_archetype_pieces(z)
@@ -417,7 +469,8 @@ try:
 except Exception as e:
     st.error(str(e)); st.stop()
 
-# Output
+# ====================== Output ======================
+
 left, right = st.columns([1,1])
 with left:
     st.subheader("🏆 Top Archetypes")
