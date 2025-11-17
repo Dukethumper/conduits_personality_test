@@ -182,7 +182,7 @@ def parse_txt_questions(raw: str) -> Dict:
     """
     Format:
       Dimension headers (hidden):   Sattva:
-      Item lines: <question text> [LABELS=a|b|...|z] [MIN=1][MAX=7][STEP=1]
+      Item lines: <question> [LABELS=a|b|...|z] [MIN=1][MAX=7][STEP=1]
       Short-form endpoints: [L=Never][R=Always]
       Optional per-item override: [DIM=Rajas]
     """
@@ -254,6 +254,10 @@ def aggregate_to_scales(responses: Dict[str,int], spec: Dict) -> Dict[str,float]
         means[d] = float(np.mean(vals)) if len(vals) > 0 else np.nan
     return means
 
+@dataclass
+class ZParamsFit:  # thin alias to keep type hints clear
+    pass
+
 def zparams_from_norms_or_single(person_scales: Dict[str,float], norms_df: Optional[pd.DataFrame]) -> ZParams:
     if norms_df is not None:
         missing = [c for c in ALL_REQ_FOR_Z if c not in norms_df.columns]
@@ -284,10 +288,10 @@ st.title("🧭 Motivational Archetypes – Test")
 
 with st.sidebar:
     st.header("Inputs")
-    q_up = st.file_uploader("Upload questions.txt", type=["txt"], help="Headers (hidden) + item lines with [LABELS=…] or [L=…][R=…].")
+    q_up = st.file_uploader("Upload questions.txt", type=["txt"], help="Headers (hidden) + items with [LABELS=…] or [L=…][R=…].")
     norms_up = st.file_uploader("Optional norms.csv", type=["csv"])
     participant_id = st.text_input("Participant ID", value="P001")
-    st.caption("Questions are shuffled per participant ID. Labels above sliders update live.")
+    st.caption("Two-column layout. Labels above sliders update live as you move them.")
 
 if q_up is None:
     st.info("Upload your questions.txt to begin.")
@@ -304,7 +308,7 @@ if not items:
     st.error("No items parsed. Check your headers (e.g., 'Sattva:') and item lines.")
     st.stop()
 
-# Stable per-user shuffle
+# Stable per-user shuffle (no categories shown)
 def stable_shuffle(items: List[Dict], pid: str, spec_obj: Dict) -> List[Dict]:
     spec_bytes = json.dumps(spec_obj, sort_keys=True).encode("utf-8")
     seed_hex = hashlib.sha256((pid + "|").encode("utf-8") + spec_bytes).hexdigest()[:16]
@@ -339,45 +343,44 @@ def value_to_label(item: Dict, val: int) -> str:
         return fallback[idx]
     return ""
 
-# ============ Render (categories hidden; label above slider updates) ============
+# ============ Compact two-column render (no form → live updates) ============
 
 responses: Dict[str,int] = {}
 scale_defaults = spec.get("scale", {"min":1,"max":7,"step":1})
 
 st.subheader("📝 Questionnaire")
-with st.form("quiz"):
-    for it in shuffled:
-        vmin = int(it.get("min", scale_defaults.get("min", 1)))
-        vmax = int(it.get("max", scale_defaults.get("max", 7)))
-        step = int(it.get("step", scale_defaults.get("step", 1)))
-        default_val = vmin + ((vmax - vmin) // (2 * step)) * step
+for it in shuffled:
+    vmin = int(it.get("min", scale_defaults.get("min", 1)))
+    vmax = int(it.get("max", scale_defaults.get("max", 7)))
+    step = int(it.get("step", scale_defaults.get("step", 1)))
+    default_val = vmin + ((vmax - vmin) // (2 * step)) * step
 
-        # Reserve a placeholder ABOVE the slider for the dynamic label
-        label_ph = st.empty()
+    c1, c2 = st.columns([2, 3])  # left: question text; right: dynamic label + slider
+    with c1:
+        st.markdown(f"**{it['text']}**")
+    with c2:
+        # current value (from state or default)
+        current_val = st.session_state.get(it["id"], default_val)
+        curr_label = value_to_label(it, current_val)
+        if curr_label:
+            st.markdown(f"<div style='font-size:0.9rem; opacity:0.8; margin-bottom:-0.5rem'><b>{curr_label}</b></div>", unsafe_allow_html=True)
+        elif it.get("L") or it.get("R"):
+            st.markdown(f"<div style='font-size:0.9rem; opacity:0.7; margin-bottom:-0.5rem'><b>{it.get('L','')}</b></div>", unsafe_allow_html=True)
 
-        # Slider (label is the question text; no category headers)
+        # Slider: moving it triggers a rerun → label above updates automatically
         val = st.slider(
-            it["text"],
-            min_value=vmin, max_value=vmax, step=step,
-            value=st.session_state.get(it["id"], default_val),
-            key=it["id"],
+            label="", min_value=vmin, max_value=vmax, step=step,
+            value=current_val, key=it["id"],
             help=None if not (it.get("L") or it.get("R")) else f"{it.get('L','')}  ↔  {it.get('R','')}",
         )
 
-        # Compute and display the current label
-        curr_label = value_to_label(it, val)
-        if curr_label:
-            label_ph.markdown(f"**{curr_label}**")
-        else:
-            # Optional tiny hint when no full label set is present
-            if it.get("L") or it.get("R"):
-                label_ph.markdown(f"**{it.get('L','')}**")
+    st.divider()
+    responses[it["id"]] = val
 
-        responses[it["id"]] = val
-        st.divider()
-    submitted = st.form_submit_button("Compute Results")
+# Compute button (separate from sliders so labels update live on move)
+compute = st.button("Compute Results")
 
-if not submitted:
+if not compute:
     st.stop()
 
 # Aggregate & validate
@@ -433,3 +436,4 @@ with right:
 
     st.subheader("🧩 Domain Centroids (means)")
     st.json(res["domain_centroids"])
+
