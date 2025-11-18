@@ -223,6 +223,9 @@ def direct_mean_for_dim(responses: dict, spec: dict, dimension: str) -> float:
     vals = [responses[q["id"]] for q in spec["questions"] if q["dimension"] == dimension and q["id"] in responses]
     return float(np.mean(vals)) if vals else float("nan")
 
+def direct_values_for_dim(responses: dict, spec: dict, dimension: str) -> List[float]:
+    return [float(responses[q["id"]]) for q in spec["questions"] if q["dimension"] == dimension and q["id"] in responses]
+
 # ====================== Archetype prep (z used for similarity only) ======================
 @dataclass
 class ZParams:
@@ -261,7 +264,7 @@ def normalize_probs(v: np.ndarray) -> np.ndarray:
 # ====================== UI ======================
 st.set_page_config(page_title="Motivational Archetypes – Test", page_icon="🧭", layout="wide")
 st.title("🧭 Motivational Archetypes – Test")
-APP_VERSION = "confidence_reintroduced(Self_Insight/Self_Serving_Bias)_v1"
+APP_VERSION = "conf_from(Self Insight, Self Serving Bias)_no_subtype_v5"
 st.markdown(f"<div style='padding:8px;border:2px solid #f00;border-radius:8px;margin:8px 0;'><b>Running:</b> {APP_VERSION}</div>", unsafe_allow_html=True)
 
 with st.sidebar:
@@ -271,6 +274,13 @@ with st.sidebar:
     norms_up = st.file_uploader("Optional norms.csv (for archetype standardization only)", type=["csv"])
     participant_id = st.text_input("Participant ID", value="P001")
     ranking_mode = st.selectbox("Motivation ranking metric", ["Raw means (1–7)", "Z-scores (vs norms)"])
+
+    st.markdown("---")
+    st.subheader("🧪 Confidence override (debug)")
+    use_conf_override = st.checkbox("Override Self Insight / Self Serving Bias")
+    if use_conf_override:
+        ov_si  = st.slider("Self Insight (override)", 1.0, 7.0, 7.0, 0.1)
+        ov_ssb = st.slider("Self Serving Bias (override)", 1.0, 7.0, 1.0, 0.1)
 
 # Load spec
 def load_questions_from_repo() -> Dict:
@@ -376,20 +386,42 @@ if missing_dims:
     st.error(f"Missing responses for: {missing_dims}")
     st.stop()
 
-# Confidence (Self Insight / Self Serving Bias)
-def compute_confidence_from_means(si: float, ssb: float) -> tuple[float, str]:
+# ---------- Confidence (Self Insight & Self Serving Bias only) ----------
+def compute_confidence_from_means(si: float, ssb: float) -> tuple[float, str, float, float]:
     si_n  = (float(si)  - 1.0) / 6.0
     ssb_n = (float(ssb) - 1.0) / 6.0
     C = max(0.0, min(1.0, 0.5 * (si_n + ssb_n)))
     level = "High" if C >= 2/3 else ("Moderate" if C >= 0.45 else "Low")
-    return C, level
+    return C, level, si_n, ssb_n
 
-si_mean  = direct_mean_for_dim(responses, spec, "Self_Insight")
-ssb_mean = direct_mean_for_dim(responses, spec, "Self_Serving_Bias")
+# Pull means from responses
+si_vals  = direct_values_for_dim(responses, spec, "Self_Insight")
+ssb_vals = direct_values_for_dim(responses, spec, "Self_Serving_Bias")
+si_mean  = float(np.mean(si_vals))  if si_vals  else np.nan
+ssb_mean = float(np.mean(ssb_vals)) if ssb_vals else np.nan
 if np.isnan(si_mean) or np.isnan(ssb_mean):
     st.error("Missing **Self Insight** or **Self Serving Bias**. Check headers in questions.txt.")
     st.stop()
-C, C_level = compute_confidence_from_means(si_mean, ssb_mean)
+
+# Apply optional override for debug
+if st.session_state.get("_use_conf_override_once", False):
+    # no-op; legacy guard
+    pass
+if 'use_conf_override' in locals() and use_conf_override:
+    si_mean, ssb_mean = float(ov_si), float(ov_ssb)
+
+C, C_level, si_map, ssb_map = compute_confidence_from_means(si_mean, ssb_mean)
+
+with st.expander("🔒 Confidence Debug (exact inputs & math)"):
+    st.write({
+        "Self Insight items (values)": si_vals,
+        "Self Serving Bias items (values)": ssb_vals,
+        "SI_mean": si_mean,
+        "SSB_mean": ssb_mean,
+        "SI_map01": si_map,
+        "SSB_map01": ssb_map,
+        "formula": "C = 0.5 * (SI_map01 + SSB_map01) -> [0,1]"
+    })
 
 # Norms (optional) for archetype similarity only
 norms_df = None
@@ -403,7 +435,7 @@ if norms_up is not None:
         st.error(f"Failed to read norms.csv: {e}")
         st.stop()
 
-# Archetype scoring
+# Archetype scoring (pattern + absolute + strategy + orientation) — confidence is display-only.
 @dataclass
 class ScorePieces:
     probs: Dict[str,float]
@@ -556,14 +588,6 @@ if HAS_REPORTLAB:
         for _, r in mot_iter.iterrows():
             mot_tbl_data.append([int(r["rank"]), r["Motivation"], f"{float(r[col_label.lower()]):.3f}"])
         mot_tbl = Table(mot_tbl_data, hAlign="LEFT")
-        mot_tbl.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
-            ('GRID', (0,0), (-1,-1), 0.25, colors.grey),
-            ('ALIGN', (0,0), (-1,0), 'CENTER'),
-            ('ALIGN', (0,1), (0,-1), 'CENTER'),
-            ('ALIGN', (2,1), (2,-1), 'RIGHT'),
-            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ]))
         doc.build(story)
         return buf.getvalue()
 
