@@ -21,7 +21,7 @@ try:
 except Exception:
     HAS_REPORTLAB = False
 
-# ====================== Canonical dims ======================
+# ====================== Canonical dimensions ======================
 MOTIVATIONS = [
     "Sattva","Rajas","Tamas",
     "Prajna","Personal_Unconscious","Collective_Unconscious",
@@ -31,8 +31,10 @@ MOTIVATIONS = [
 STRATEGIES = ["Conform","Control","Flow","Risk"]
 ORIENTATIONS = ["Cognitive","Energy","Relational","Surrender"]
 SELF_SCALES = ["Self_Insight","Self_Serving_Bias"]
+
 ALL_DIMS = MOTIVATIONS + STRATEGIES + ORIENTATIONS
 ALL_REQ_FOR_Z = ALL_DIMS + SELF_SCALES
+
 DEFAULT_DOMAIN_MAP = {
     "Energy": ["Sattva","Rajas","Tamas"],
     "Cognitive": ["Prajna","Personal_Unconscious","Collective_Unconscious"],
@@ -40,7 +42,7 @@ DEFAULT_DOMAIN_MAP = {
     "Relational": ["Relational_Balance","Thymos","Eros"],
 }
 
-# ====================== Header normalization ======================
+# ====================== Header canon ======================
 HEADER_TO_CANON = {
     # motivations
     "sattva":"Sattva","rajas":"Rajas","tamas":"Tamas",
@@ -53,8 +55,10 @@ HEADER_TO_CANON = {
     # strategies
     "conform":"Conform","control":"Control","flow":"Flow","risk":"Risk",
     # orientations + legacy
-    "cognitive":"Cognitive","energy":"Energy","relational":"Relational","relationship":"Relational","relationship value":"Relational","surrender":"Surrender",
-    "inward":"Cognitive","outward":"Energy",
+    "cognitive":"Cognitive","inward":"Cognitive",
+    "energy":"Energy","outward":"Energy",
+    "relational":"Relational","relationship":"Relational","relationship value":"Relational",
+    "surrender":"Surrender",
     # self
     "self insight":"Self_Insight","self_insight":"Self_Insight","self-insight":"Self_Insight","self–insight":"Self_Insight",
     "self serving bias":"Self_Serving_Bias","self-serving bias":"Self_Serving_Bias","self_serving_bias":"Self_Serving_Bias",
@@ -72,7 +76,7 @@ def canon(name: str) -> Optional[str]:
         if k in s and (best is None or len(k) > len(best[0])): best = (k, v)
     return best[1] if best else None
 
-# ====================== Archetype centroids (embedded) ======================
+# ====================== Centroids (embedded) ======================
 COLUMN_NORMALIZATION = {
     "Sattva":"Sattva","Rajas":"Rajas","Tamas":"Tamas","Prajna":"Prajna",
     "Pers.U":"Personal_Unconscious","Personal Unconscious":"Personal_Unconscious","Personal_Unconscious":"Personal_Unconscious",
@@ -117,7 +121,7 @@ _ARC_RAW = pd.DataFrame(
 )
 ARCHETYPE_CENTROIDS = normalize_centroid_headers(_ARC_RAW)
 
-# ====================== Engine helpers ======================
+# ====================== Math helpers ======================
 EPS = 1e-8
 W_MOT_ABS, W_STRAT_MATCH, W_ORIENT_MATCH = 0.60, 0.20, 0.20
 
@@ -163,42 +167,28 @@ def quadrant_label_from_pair(a: str, b: str) -> str:
     if "Flow"    in pair and "Risk"    in pair: return "Flow–Risk"
     return "Ambiguous"
 
-# -------- robust quadrant/subtype with tie tolerance --------
 def compute_quadrant_subtype(strategy_means: Dict[str, float], tol: float = 0.05) -> Tuple[str, str]:
     cfm = strategy_means["Conform"]; rkm = strategy_means["Risk"]
     ctl = strategy_means["Control"]; flw = strategy_means["Flow"]
 
-    horiz = None
-    if ctl - flw > tol: horiz = "Control"
-    elif flw - ctl > tol: horiz = "Flow"
-
-    vert = None
-    if cfm - rkm > tol: vert = "Conform"
-    elif rkm - cfm > tol: vert = "Risk"
+    horiz = "Control" if ctl - flw > tol else ("Flow" if flw - ctl > tol else None)
+    vert  = "Conform" if cfm - rkm > tol else ("Risk" if rkm - cfm > tol else None)
 
     if horiz and vert:
-        sA, vA = (horiz, strategy_means[horiz])
-        sB, vB = (vert,  strategy_means[vert])
+        sA, vA = (horiz, strategy_means[horiz]); sB, vB = (vert, strategy_means[vert])
     elif horiz and not vert:
-        sA, vA = (horiz, strategy_means[horiz])
-        sB, vB = ("Conform" if cfm >= rkm else "Risk", max(cfm, rkm))
+        sA, vA = (horiz, strategy_means[horiz]); sB, vB = ("Conform" if cfm >= rkm else "Risk", max(cfm, rkm))
     elif vert and not horiz:
-        sA, vA = (vert, strategy_means[vert])
-        sB, vB = ("Control" if ctl >= flw else "Flow", max(ctl, flw))
+        sA, vA = (vert, strategy_means[vert]); sB, vB = ("Control" if ctl >= flw else "Flow", max(ctl, flw))
     else:
         return "Ambiguous", "Balanced (no dominant axes)"
 
     if vB > vA: sA, sB, vA, vB = sB, sA, vB, vA
-
     delta = abs(vA - vB)
     dom = "balanced" if delta < 0.2 else (f"{sA}-leaning" if delta < 0.6 else f"{sA}-dominant")
-    quadrant = quadrant_label_from_pair(sA, sB)
-    return quadrant, f"{sA} + {sB} ({dom})"
+    return quadrant_label_from_pair(sA, sB), f"{sA} + {sB} ({dom})"
 
-# Confidence 0..1 from raw means
 def compute_confidence_from_means(si: float, ssb: float) -> Tuple[float, str]:
-    if np.isnan(si) or np.isnan(ssb):
-        return np.nan, "Unavailable"
     si_n = (si - 1.0) / 6.0
     ssb_n = (ssb - 1.0) / 6.0
     C = max(0.0, min(1.0, 0.5*(si_n + ssb_n)))
@@ -236,7 +226,6 @@ def parse_txt_questions(raw: str) -> Dict:
             spec["parse_report"]["items_without_dim"].append({"line": idx, "text": line}); continue
         vmin = int(kvs.get("MIN", "1")); vmax = int(kvs.get("MAX", "7")); vstep = int(kvs.get("STEP", "1"))
         npoints = (vmax - vmin)//vstep + 1
-
         labels: Optional[List[str]] = None
         if "LABELS" in kvs:
             labels = [p.strip() for p in kvs["LABELS"].split("|")]
@@ -248,13 +237,12 @@ def parse_txt_questions(raw: str) -> Dict:
                 labels = [L, "Slightly "+L, "Somewhat "+L, "Neutral", "Somewhat "+R, "Slightly "+R, R]
             elif L and R and npoints == 5:
                 labels = [L, "Somewhat "+L, "Neutral", "Somewhat "+R, R]
-
         counts[dim] = counts.get(dim, 0) + 1
         qid = f"q_{dim}_{counts[dim]}"
         spec["questions"].append({
             "id": qid, "dimension": dim, "text": text,
             "min": vmin, "max": vmax, "step": vstep,
-            "labels": labels, "L": L if 'L' in kvs else None, "R": R if 'R' in kvs else None,
+            "labels": labels, "L": kvs.get("L"), "R": kvs.get("R"),
         })
     return spec
 
@@ -270,16 +258,15 @@ def aggregate_to_scales(responses: Dict[str,int], spec: Dict) -> Dict[str,float]
         means[d] = float(np.mean(vals)) if len(vals) > 0 else np.nan
     return means
 
-# ====================== Direct means helpers & coverage ======================
+# ====================== Direct means & coverage ======================
 REQ_STRATEGY_DIMS = ["Conform","Control","Flow","Risk"]
 REQ_SELF_DIMS = ["Self_Insight","Self_Serving_Bias"]
 
 def count_items_by_dim(spec: dict) -> dict:
     counts = {}
     for q in spec.get("questions", []):
-        d = q.get("dimension")
-        counts[d] = counts.get(d, 0) + 1
-    return counts
+        d = q.get("dimension"); counts[d] = counts.get(d, 0) + 1
+    return {k:int(v) for k,v in sorted(counts.items())}
 
 def direct_mean_for_dim(responses: dict, spec: dict, dimension: str) -> float:
     vals = [responses[q["id"]] for q in spec["questions"] if q["dimension"] == dimension and q["id"] in responses]
@@ -303,17 +290,15 @@ def prepare_archetype_pieces(z: ZParams) -> Tuple[pd.DataFrame,pd.DataFrame]:
         arch_std[c] = (arch_std[c] - z.mean[c]) / z.std[c]
     return arch_mz, arch_std
 
-# ====================== Questions loader ======================
-def load_questions_from_repo() -> Dict:
-    q_path = Path(os.getenv("QUESTIONS_PATH", "questions.txt"))
-    if not q_path.exists():
-        raise FileNotFoundError(f"questions file not found at: {q_path.resolve()}")
-    text = q_path.read_text(encoding="utf-8").lstrip("\ufeff")
-    return parse_txt_questions(text)
-
 # ====================== UI ======================
 st.set_page_config(page_title="Motivational Archetypes – Test", page_icon="🧭", layout="wide")
 st.title("🧭 Motivational Archetypes – Test")
+APP_VERSION = "build: diagnostics-proof v1.0"
+st.markdown(f"""
+<div style="padding:8px;border:2px solid #f00;border-radius:8px;margin:8px 0;">
+  <b>Running:</b> {APP_VERSION}
+</div>
+""", unsafe_allow_html=True)
 
 with st.sidebar:
     st.header("Inputs")
@@ -322,23 +307,25 @@ with st.sidebar:
     norms_up = st.file_uploader("Optional norms.csv", type=["csv"])
     participant_id = st.text_input("Participant ID", value="P001")
     ranking_mode = st.selectbox("Motivation ranking metric", ["Raw means (1–7)", "Z-scores (vs norms)"])
-
     st.markdown("---")
-    st.subheader("🧪 Sandbox")
-    profile_mode = st.selectbox(
-        "Profile source",
-        [
-            "From questionnaire",
-            "Sample: Confidence 1.0 – Control+Risk dominant",
-            "Sample: Confidence 0.5 – Flow+Conform balanced",
-            "Sample: Confidence 0.0 – Flow+Risk dominant",
-            "Sample: Confidence 1.0 – Flow+Conform dominant",
-        ],
-        help="Use sample profiles to sanity-check Confidence & Quadrant without changing sliders.",
-    )
-    st.caption("Order is randomized per participant. Labels update as you slide.")
+    st.subheader("🧪 Debug Overrides")
+    use_overrides = st.checkbox("Enable overrides")
+    if use_overrides:
+        ov_si  = st.slider("Self_Insight (override)", 1.0, 7.0, 6.5, 0.1)
+        ov_ssb = st.slider("Self_Serving_Bias (override)", 1.0, 7.0, 6.5, 0.1)
+        ov_con = st.slider("Conform (override)", 1.0, 7.0, 6.0, 0.1)
+        ov_ctl = st.slider("Control (override)", 1.0, 7.0, 6.5, 0.1)
+        ov_flw = st.slider("Flow (override)",    1.0, 7.0, 2.5, 0.1)
+        ov_rsk = st.slider("Risk (override)",    1.0, 7.0, 2.4, 0.1)
 
 # Load spec
+def load_questions_from_repo() -> Dict:
+    q_path = Path(os.getenv("QUESTIONS_PATH", "questions.txt"))
+    if not q_path.exists():
+        raise FileNotFoundError(f"questions file not found at: {q_path.resolve()}")
+    text = q_path.read_text(encoding="utf-8").lstrip("\ufeff")
+    return parse_txt_questions(text)
+
 try:
     spec = parse_txt_questions(q_up.read().decode("utf-8")) if q_up is not None else load_questions_from_repo()
 except Exception as e:
@@ -351,9 +338,10 @@ if rep.get("unknown_headers") or rep.get("items_without_dim"):
         if rep.get("unknown_headers"): st.json(rep["unknown_headers"])
         if rep.get("items_without_dim"): st.json(rep["items_without_dim"])
 
-items = list(spec.get("questions", []))
+items: List[Dict] = list(spec.get("questions", []))
 if not items:
-    st.error("No items parsed. Check your headers and items."); st.stop()
+    st.error("No items parsed. Check your headers and items.")
+    st.stop()
 
 # Stable per-user shuffle
 def stable_shuffle(items: List[Dict], pid: str, spec_obj: Dict) -> List[Dict]:
@@ -390,7 +378,6 @@ for it in shuffled:
     vmax = int(it.get("max", scale_defaults.get("max", 7)))
     step = int(it.get("step", scale_defaults.get("step", 1)))
     default_val = vmin + ((vmax - vmin) // (2 * step)) * step
-
     c1, c2 = st.columns([2, 3])
     with c1: st.markdown(f"**{it['text']}**")
     with c2:
@@ -406,61 +393,38 @@ for it in shuffled:
     st.divider()
     responses[it["id"]] = val
 
+# ====================== ALWAYS-ON DIAGNOSTICS (visible before Compute) ======================
+def _direct_mean(responses, spec, dim):
+    vals = [responses[q["id"]] for q in spec["questions"] if q["dimension"] == dim and q["id"] in responses]
+    return float(np.mean(vals)) if vals else float("nan")
+
+with st.expander("🛠 Always-on Diagnostics (open me)"):
+    st.write("**Header coverage (questions per dimension):**")
+    st.json(count_items_by_dim(spec))
+    si_now  = _direct_mean(responses, spec, "Self_Insight")
+    ssb_now = _direct_mean(responses, spec, "Self_Serving_Bias")
+    str_now = {k: _direct_mean(responses, spec, k) for k in STRATEGIES}
+    st.write("**Direct means (raw 1–7, from sliders right now):**")
+    st.json({"Self": {"Self_Insight": si_now, "Self_Serving_Bias": ssb_now}, "Strategies": str_now})
+
+# Compute
 compute = st.button("Compute Results")
-if not compute: st.stop()
-
-# ====================== Diagnostics ======================
-coverage = count_items_by_dim(spec)
-si_ssb_means = direct_self_means(responses, spec)
-str_means = direct_strategy_means(responses, spec)
-
-missing_self = [d for d in REQ_SELF_DIMS if coverage.get(d, 0) == 0]
-missing_str  = [d for d in REQ_STRATEGY_DIMS if coverage.get(d, 0) == 0]
-
-with st.expander("🛠 Diagnostics (click to open)"):
-    st.write("**Item coverage by dimension**:")
-    st.json({k:int(v) for k,v in sorted(coverage.items())})
-    st.write("**Direct means (raw 1–7)**:")
-    st.json({"Self": si_ssb_means, "Strategies": str_means})
-
-if missing_self or missing_str:
-    st.error(f"Missing required items. Add at least one item for: {missing_self + missing_str}")
+if not compute:
     st.stop()
 
-# ====================== Sample profile sandbox ======================
-def sample_profile(name: str) -> Tuple[float,float,Dict[str,float]]:
-    # return (si_mean, ssb_mean, strategy_means)
-    if name == "Sample: Confidence 1.0 – Control+Risk dominant":
-        return 7.0, 7.0, {"Conform":2.0,"Control":6.8,"Flow":2.5,"Risk":6.6}
-    if name == "Sample: Confidence 0.5 – Flow+Conform balanced":
-        return 4.5, 4.5, {"Conform":6.0,"Control":3.0,"Flow":6.0,"Risk":3.0}
-    if name == "Sample: Confidence 0.0 – Flow+Risk dominant":
-        return 1.0, 1.0, {"Conform":2.0,"Control":2.5,"Flow":6.8,"Risk":6.6}
-    if name == "Sample: Confidence 1.0 – Flow+Conform dominant":
-        return 7.0, 7.0, {"Conform":6.6,"Control":2.4,"Flow":6.7,"Risk":2.3}
-    # default (not used)
-    return np.nan, np.nan, {}
-use_samples = (profile_mode != "From questionnaire")
-si_mean  = si_ssb_means["Self_Insight"] if not use_samples else sample_profile(profile_mode)[0]
-ssb_mean = si_ssb_means["Self_Serving_Bias"] if not use_samples else sample_profile(profile_mode)[1]
-strategy_means = str_means if not use_samples else sample_profile(profile_mode)[2]
+# Use overrides if enabled
+if use_overrides:
+    si_now, ssb_now = ov_si, ov_ssb
+    str_now = {"Conform": ov_con, "Control": ov_ctl, "Flow": ov_flw, "Risk": ov_rsk}
 
-# guard: confidence inputs must exist
-if np.isnan(si_mean) or np.isnan(ssb_mean):
-    st.error("Self_Insight or Self_Serving_Bias not detected. Check questions.txt headers match exactly.")
+# Guard SI/SSB
+if np.isnan(si_now) or np.isnan(ssb_now):
+    st.error("Self_Insight or Self_Serving_Bias not detected. Fix headers in questions.txt.")
     st.stop()
 
-# ====================== Validate, derive orientations, norms ======================
-REQ_DIMS = MOTIVATIONS + STRATEGIES + ["Cognitive","Energy","Relational","Surrender"] + SELF_SCALES
-LEGACY_TO_CANON = {"Inward":"Cognitive","Outward":"Energy","Relationship":"Relational","Relational":"Relational"}
-
+# Validate required dimensions; derive orientations if missing
+REQ_DIMS = MOTIVATIONS + STRATEGIES + ORIENTATIONS + SELF_SCALES
 person_scales = aggregate_to_scales(responses, spec)
-for k in list(person_scales.keys()):
-    if k in LEGACY_TO_CANON:
-        c = LEGACY_TO_CANON[k]
-        if np.isnan(person_scales.get(c, np.nan)):
-            person_scales[c] = person_scales[k]
-        person_scales.pop(k, None)
 
 def derive_orientations(ps: Dict[str,float]) -> None:
     if np.isnan(ps.get("Energy", np.nan)):
@@ -475,8 +439,10 @@ derive_orientations(person_scales)
 
 missing = [d for d in REQ_DIMS if np.isnan(person_scales.get(d, np.nan))]
 if missing:
-    st.error(f"Missing responses for: {missing}"); st.stop()
+    st.error(f"Missing responses for: {missing}")
+    st.stop()
 
+# Norms (optional)
 norms_df = None
 if norms_up is not None:
     try:
@@ -485,9 +451,10 @@ if norms_up is not None:
         have = [c for c in ren if c in norms_df.columns]
         if have: norms_df = norms_df.rename(columns={c: ren[c] for c in have})
     except Exception as e:
-        st.error(f"Failed to read norms.csv: {e}"); st.stop()
+        st.error(f"Failed to read norms.csv: {e}")
+        st.stop()
 
-# ====================== Score ======================
+# Prep archetypes
 @dataclass
 class ScorePieces:
     probs: Dict[str,float]
@@ -509,12 +476,10 @@ def score_single(
     strategy_means: Dict[str, float],
 ) -> ScorePieces:
     C, C_level = compute_confidence_from_means(si_mean, ssb_mean)
-    if np.isnan(C): raise ValueError("Confidence unavailable. SI/SSB NaN.")
 
     z_mot = np.array([(person[m] - z.mean[m]) / z.std[m] for m in MOTIVATIONS], float)
     z_str = np.array([(person[s] - z.mean[s]) / z.std[s] for s in STRATEGIES], float)
     z_ori = np.array([(person[o] - z.mean[o]) / z.std[o] for o in ORIENTATIONS], float)
-
     z_pat = intra_person_z(np.array([person[m] for m in MOTIVATIONS], float))
 
     names = list(arch.index); vals=[]
@@ -533,15 +498,15 @@ def score_single(
         DS = euclid(z_str, as_); SS = 1/(1+DS)
         DO = euclid(z_ori, ao); SO = 1/(1+DO)
 
-        S_total = 0.60*S_A + 0.20*SS + 0.20*SO
+        S_total = W_MOT_ABS*S_A + W_STRAT_MATCH*SS + W_ORIENT_MATCH*SO
         vals.append(S_total*(0.75+0.25*C))
 
     probs = normalize_probs(np.array(vals,float))
-    order = np.argsort(-probs); top3=[(names[i], float(probs[i])) for i in order[:3]]
+    order = np.argsort(-probs)
+    top3=[(names[i], float(probs[i])) for i in order[:3]]
 
-    quadrant, subtype = compute_quadrant_subtype(strategy_means, tol=0.05)
+    quadrant, subtype = compute_quadrant_subtype(strategy_means=str_now, tol=0.05)
 
-    # axes from within-person z of strategies (reference only)
     raw_str = np.array([person[s] for s in STRATEGIES], float)
     z_str_personal = intra_person_z(raw_str)
     axes = {
@@ -563,12 +528,14 @@ try:
     z = zparams_from_norms_or_single(person_scales, norms_df)
     arch_mz, arch_std = prepare_archetype_pieces(z)
     person_row = pd.Series({**person_scales, "participant_id": participant_id})
-    res = score_single(person_row, z, ARCHETYPE_CENTROIDS, arch_mz, arch_std,
-                       si_mean=si_mean, ssb_mean=ssb_mean, strategy_means=strategy_means)
+    res = score_single(
+        person_row, z, ARCHETYPE_CENTROIDS, arch_mz, arch_std,
+        si_mean=si_now, ssb_mean=ssb_now, strategy_means=str_now
+    )
 except Exception as e:
     st.error(str(e)); st.stop()
 
-# ====================== Report & downloads ======================
+# ====================== Report ======================
 def top3_percentages(top3: List[Tuple[str,float]]) -> List[Tuple[str,int]]:
     vals = [p for _, p in top3]; s = sum(vals) or 1.0
     raw = [p / s * 100.0 for p in vals]
@@ -598,16 +565,15 @@ with left:
     st.subheader("🧭 Strategic Quadrant")
     st.write(f"**{res.quadrant}**")
     st.write(f"**Subtype:** {res.strategy_subtype}")
-    st.caption("Strategy means: " + ", ".join(f"{k}={strategy_means[k]:.2f}" for k in STRATEGIES))
+    st.caption("Strategy means: " + ", ".join(f"{k}={str_now[k]:.2f}" for k in STRATEGIES))
     st.caption(f"axis_CF = {res.quadrant_axes['axis_CF']:.2f} | axis_CR = {res.quadrant_axes['axis_CR']:.2f}")
-    # If ambiguous, guide the user
     if "Ambiguous" in res.quadrant or "Balanced" in res.strategy_subtype:
-        st.info("Strategies are tied within tolerance. Adjust Control vs Flow and/or Conform vs Risk to disambiguate quadrant.")
+        st.info("Strategies are tied within tolerance. Adjust Control vs Flow and/or Conform vs Risk to disambiguate.")
 
     st.subheader("🔒 Confidence")
     st.metric("Confidence Index", f"{res.confidence:.3f}", help="0 (all 1s on SI/SSB) → 1 (all 7s)")
     st.write(f"**Level:** {res.confidence_level}")
-    st.caption(f"SI mean: {si_mean:.2f} · SSB mean: {ssb_mean:.2f}")
+    st.caption(f"SI mean: {si_now:.2f} · SSB mean: {ssb_now:.2f}")
 
     st.subheader("📥 Download Full Scores (CSV)")
     out_df = pd.DataFrame([{ "participant_id": participant_id, **res.probs }])
@@ -645,8 +611,10 @@ if HAS_REPORTLAB:
         doc = SimpleDocTemplate(buf, pagesize=LETTER, leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=36)
         styles = getSampleStyleSheet()
         story: List = []
+
         story.append(Paragraph(f"Motivational Archetypes Report – {participant_id}", styles["Title"]))
         story.append(Spacer(1, 8))
+
         (tp1,v1),(tp2,v2),(tp3,v3) = top3
         story.append(Paragraph("<b>Top Archetypes</b>", styles["Heading2"]))
         story.append(Paragraph(f"Primary: <b>{tp1}</b> ({v1:.3f})", styles["Normal"]))
@@ -655,6 +623,7 @@ if HAS_REPORTLAB:
         mix_line = " · ".join([f"{pct}% {name}" for name, pct in mix])
         story.append(Paragraph(f"Top-3 mix: <b>{mix_line}</b>", styles["Normal"]))
         story.append(Spacer(1, 8))
+
         story.append(Paragraph("<b>Strategy Profile</b>", styles["Heading2"]))
         story.append(Paragraph(f"Quadrant: {quadrant_label}", styles["Normal"]))
         story.append(Paragraph(f"Subtype: {subtype}", styles["Normal"]))
@@ -662,6 +631,7 @@ if HAS_REPORTLAB:
         story.append(Paragraph(f"axis_CF = {axes['axis_CF']:.2f} | axis_CR = {axes['axis_CR']:.2f}", styles["Normal"]))
         story.append(Paragraph(f"Confidence Index: <b>{confidence:.3f}</b> ({confidence_level}) — SI={si_mean:.2f}, SSB={ssb_mean:.2f}", styles["Normal"]))
         story.append(Spacer(1, 8))
+
         story.append(Paragraph("<b>Archetype Probabilities</b>", styles["Heading2"]))
         probs_tbl_data = [["Archetype", "Probability"]]
         for name, val in probs_series.items():
@@ -675,6 +645,7 @@ if HAS_REPORTLAB:
         ]))
         story.append(probs_tbl)
         story.append(Spacer(1, 8))
+
         story.append(Paragraph(f"<b>Motivation Ranking — {ranking_mode_label}</b>", styles["Heading2"]))
         col_label = "Z" if "z" in mot_df.columns else "Mean"
         mot_tbl_data = [["Rank", "Motivation", col_label]]
@@ -705,12 +676,11 @@ if HAS_REPORTLAB:
         probs_series=probs,
         mot_df=mot_df[["rank"] + (["z"] if "z" in mot_df.columns else ["mean"])],
         ranking_mode_label=("Z-scores" if ranking_mode.startswith("Z") else "Raw means (1–7)"),
-        si_mean=si_mean,
-        ssb_mean=ssb_mean,
-        strategy_means=strategy_means,
+        si_mean=si_now,
+        ssb_mean=ssb_now,
+        strategy_means=str_now,
     )
     st.download_button("📄 Download PDF report", data=pdf_bytes,
                        file_name=f"{participant_id}_report.pdf", mime="application/pdf")
 else:
     st.info("📄 PDF export disabled (install `reportlab`).")
-
