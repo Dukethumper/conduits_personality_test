@@ -470,14 +470,14 @@ for it in shuffled:
 compute = st.button("Compute Results")
 if not compute: st.stop()
 
-# ====================== Validation with canonical-only requirements ======================
+# ====================== Validation with canonical-only requirements + auto-derive orientations ======================
 
 REQ_DIMS = MOTIVATIONS + STRATEGIES + ["Cognitive", "Energy", "Relational", "Surrender"] + SELF_SCALES
 LEGACY_TO_CANON = {"Inward": "Cognitive", "Outward": "Energy", "Relationship": "Relational", "Relational": "Relational"}
 
 person_scales = aggregate_to_scales(responses, spec)
 
-# Normalize any legacy keys to canonical before checking missing
+# Map any legacy keys to canonical before checking
 legacy_hits = [k for k in list(person_scales.keys()) if k in LEGACY_TO_CANON]
 for k in legacy_hits:
     canon_k = LEGACY_TO_CANON[k]
@@ -485,6 +485,20 @@ for k in legacy_hits:
         person_scales[canon_k] = person_scales[k]
     person_scales.pop(k, None)
 
+# --- Auto-derive orientations from motivations if absent ---
+def derive_orientations(ps: Dict[str, float]) -> None:
+    if np.isnan(ps.get("Energy", np.nan)):
+        ps["Energy"] = float(np.nanmean([ps.get(m, np.nan) for m in DEFAULT_DOMAIN_MAP["Energy"]]))
+    if np.isnan(ps.get("Cognitive", np.nan)):
+        ps["Cognitive"] = float(np.nanmean([ps.get(m, np.nan) for m in DEFAULT_DOMAIN_MAP["Cognitive"]]))
+    if np.isnan(ps.get("Relational", np.nan)):
+        ps["Relational"] = float(np.nanmean([ps.get(m, np.nan) for m in DEFAULT_DOMAIN_MAP["Relational"]]))
+    if np.isnan(ps.get("Surrender", np.nan)):
+        ps["Surrender"] = float(np.nanmean([ps.get(m, np.nan) for m in DEFAULT_DOMAIN_MAP["Integrative"]]))
+
+derive_orientations(person_scales)
+
+# Now validate
 missing = [d for d in REQ_DIMS if np.isnan(person_scales.get(d, np.nan))]
 if missing:
     st.error(f"Missing responses for: {missing}")
@@ -646,3 +660,4 @@ if HAS_REPORTLAB:
                        file_name=f"{participant_id}_report.pdf", mime="application/pdf")
 else:
     st.info("📄 PDF export disabled (install `reportlab` to enable). You can still download CSVs above.")
+
