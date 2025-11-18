@@ -167,33 +167,41 @@ def quadrant_label_from_pair(a: str, b: str) -> str:
     if "Flow"    in pair and "Risk"    in pair: return "Flow–Risk"
     return "Ambiguous"
 
-def compute_quadrant_subtype(strategy_means: Dict[str, float], tol: float = 0.05) -> Tuple[str, str]:
-    cfm = strategy_means["Conform"]; rkm = strategy_means["Risk"]
-    ctl = strategy_means["Control"]; flw = strategy_means["Flow"]
+def compute_quadrant_subtype(strategy_means: Dict[str, float], tol: float = 0.01) -> Tuple[str, str]:
+    cfm = strategy_means["Conform"]
+    rkm = strategy_means["Risk"]
+    ctl = strategy_means["Control"]
+    flw = strategy_means["Flow"]
 
     horiz = "Control" if ctl - flw > tol else ("Flow" if flw - ctl > tol else None)
     vert  = "Conform" if cfm - rkm > tol else ("Risk" if rkm - cfm > tol else None)
 
     if horiz and vert:
-        sA, vA = (horiz, strategy_means[horiz]); sB, vB = (vert, strategy_means[vert])
+        sA, vA = horiz, strategy_means[horiz]
+        sB, vB = vert, strategy_means[vert]
     elif horiz and not vert:
-        sA, vA = (horiz, strategy_means[horiz]); sB, vB = ("Conform" if cfm >= rkm else "Risk", max(cfm, rkm))
+        sA, vA = horiz, strategy_means[horiz]
+        sB, vB = ("Conform" if cfm >= rkm else "Risk", max(cfm, rkm))
     elif vert and not horiz:
-        sA, vA = (vert, strategy_means[vert]); sB, vB = ("Control" if ctl >= flw else "Flow", max(ctl, flw))
+        sA, vA = vert, strategy_means[vert]
+        sB, vB = ("Control" if ctl >= flw else "Flow", max(ctl, flw))
     else:
         return "Ambiguous", "Balanced (no dominant axes)"
 
-    if vB > vA: sA, sB, vA, vB = sB, sA, vB, vA
+    if vB > vA:
+        sA, sB, vA, vB = sB, sA, vB, vA
+
     delta = abs(vA - vB)
     dom = "balanced" if delta < 0.2 else (f"{sA}-leaning" if delta < 0.6 else f"{sA}-dominant")
     return quadrant_label_from_pair(sA, sB), f"{sA} + {sB} ({dom})"
 
+
 def compute_confidence_from_means(si: float, ssb: float) -> Tuple[float, str]:
-    si_n = (si - 1.0) / 6.0
-    ssb_n = (ssb - 1.0) / 6.0
-    C = max(0.0, min(1.0, 0.5*(si_n + ssb_n)))
-    level = "High" if C >= 2/3 else ("Moderate" if C >= 0.45 else "Low")
-    return float(C), level
+    avg = (si + ssb) / 2.0
+    C = (avg - 1.0) / 6.0  # 1→0.0, 7→1.0
+    C = max(0.0, min(1.0, C))
+    level = "High" if C >= 0.75 else ("Moderate" if C >= 0.4 else "Low")
+    return C, level
 
 # ====================== Parser & aggregation ======================
 ITEM_KV_RE = re.compile(r"\[(\w+)\s*=\s*(.*?)\]")  # [KEY=VALUE]
@@ -506,6 +514,8 @@ def score_single(
     top3=[(names[i], float(probs[i])) for i in order[:3]]
 
     quadrant, subtype = compute_quadrant_subtype(strategy_means=str_now, tol=0.05)
+
+    print("Raw strategy scores:", {s: person[s] for s in STRATEGIES})
 
     raw_str = np.array([person[s] for s in STRATEGIES], float)
     z_str_personal = intra_person_z(raw_str)
