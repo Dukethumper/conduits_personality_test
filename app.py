@@ -27,10 +27,11 @@ MOTIVATIONS: List[str] = [
 ]
 STRATEGIES: List[str] = ["Conform", "Control", "Flow", "Risk"]
 
-# Final orientations
+# Final orientations (no Inward/Outward anywhere)
 ORIENTATIONS: List[str] = ["Cognitive", "Energy", "Relational", "Surrender"]
 
 SELF_SCALES: List[str] = ["Self_Insight", "Self_Serving_Bias"]
+
 ALL_DIMS: List[str] = MOTIVATIONS + STRATEGIES + ORIENTATIONS
 ALL_REQ_FOR_Z: List[str] = ALL_DIMS + SELF_SCALES
 
@@ -54,10 +55,10 @@ HEADER_TO_CANON = {
     "thymos":"Thymos","eros":"Eros",
     # strategies
     "conform":"Conform","control":"Control","flow":"Flow","risk":"Risk",
-    # orientations (new canon + aliases)
+    # orientations (canonical + legacy aliases)
     "cognitive":"Cognitive","energy":"Energy","relational":"Relational","relationship":"Relational","relationship value":"Relational","surrender":"Surrender",
     "inward":"Cognitive","outward":"Energy",
-    # self scales
+    # self-scales
     "self insight":"Self_Insight","self_insight":"Self_Insight","self-insight":"Self_Insight","self–insight":"Self_Insight",
     "self serving bias":"Self_Serving_Bias","self-serving bias":"Self_Serving_Bias","self_serving_bias":"Self_Serving_Bias",
 }
@@ -84,6 +85,7 @@ COLUMN_NORMALIZATION = {
     "Anatta":"Anatta","Rel.Bal":"Relational_Balance","Relational Balance":"Relational_Balance","Relational_Balance":"Relational_Balance",
     "Thymos":"Thymos","Eros":"Eros",
     "Conform":"Conform","Control":"Control","Flow":"Flow","Risk":"Risk",
+    # legacy -> canonical orientations
     "Outward":"Energy","Inward":"Cognitive","Relational":"Relational","Relationship":"Relational","Surrender":"Surrender",
 }
 def normalize_centroid_headers(df: pd.DataFrame) -> pd.DataFrame:
@@ -227,7 +229,7 @@ def score_single(person: pd.Series, z: ZParams, arch: pd.DataFrame, arch_mz: pd.
     z_pat = intra_person_z(np.array([person[m] for m in MOTIVATIONS], float))
     z_SI  = (person["Self_Insight"]-z.mean["Self_Insight"])/z.std["Self_Insight"]
     z_SSB = (person["Self_Serving_Bias"]-z.mean["Self_Serving_Bias"])/z.std["Self_Serving_Bias"]
-    C = 0.7*sigmoid(float(z_SI)) + 0.3*(1.0 - 2.0*abs(sigmoid(float(z_SSB))-0.5))
+    C = 0.7*sigmoid(float(z_SI)) + 0.3*(1.0 - 2.0*abs(sigmoid(float(z_SSB))-0.5))  # why: high SI + moderate SSB ⇒ higher trust
 
     names = list(arch.index); vals=[]
     for name in names:
@@ -290,9 +292,7 @@ def parse_txt_questions(raw: str) -> Dict:
             spec["parse_report"]["items_without_dim"].append({"line": idx, "text": line})
             continue
 
-        vmin = int(kvs.get("MIN", "1"))
-        vmax = int(kvs.get("MAX", "7"))
-        vstep = int(kvs.get("STEP", "1"))
+        vmin = int(kvs.get("MIN", "1")); vmax = int(kvs.get("MAX", "7")); vstep = int(kvs.get("STEP", "1"))
         if vmax <= vmin or vstep <= 0:
             raise ValueError(f"Bad range for '{text}' on line {idx}: MIN={vmin} MAX={vmax} STEP={vstep}")
         npoints = (vmax - vmin) // vstep + 1
@@ -361,7 +361,7 @@ def top3_percentages(top3: List[Tuple[str,float]]) -> List[Tuple[str,int]]:
     a = int(round(raw[0])); b = int(round(raw[1])); c = 100 - a - b
     return [(top3[0][0], a), (top3[1][0], b), (top3[2][0], c)]
 
-# ====================== Load questions from repo or override ======================
+# ====================== Questions loader ======================
 
 def load_questions_from_repo() -> Dict:
     q_path = Path(os.getenv("QUESTIONS_PATH", "questions.txt"))
@@ -382,7 +382,7 @@ with st.sidebar:
     norms_up = st.file_uploader("Optional norms.csv", type=["csv"])
     participant_id = st.text_input("Participant ID", value="P001")
     ranking_mode = st.selectbox("Motivation ranking metric", ["Raw means (1–7)", "Z-scores (vs norms)"])
-    st.caption("Two-column layout. Labels update live.")
+    st.caption("Two-column layout. Labels update live. Order is randomized per participant.")
 
 # Load spec (repo first; uploader overrides if provided)
 try:
@@ -406,7 +406,7 @@ if not items:
     st.error("No items parsed. Check your headers and items.")
     st.stop()
 
-# Stable per-user shuffle
+# Stable per-user shuffle (seeded by participant_id + spec)
 def stable_shuffle(items: List[Dict], pid: str, spec_obj: Dict) -> List[Dict]:
     spec_bytes = json.dumps({k:v for k,v in spec_obj.items() if k != "parse_report"}, sort_keys=True).encode("utf-8")
     seed_hex = hashlib.sha256((pid + "|").encode("utf-8") + spec_bytes).hexdigest()[:16]
@@ -466,22 +466,41 @@ for it in shuffled:
 compute = st.button("Compute Results")
 if not compute: st.stop()
 
-# Aggregate & validate
+# ====================== Validation with canonical-only requirements (PATCH #1) ======================
+
+REQ_DIMS = MOTIVATIONS + STRATEGIES + ["Cognitive", "Energy", "Relational", "Surrender"] + SELF_SCALES
+LEGACY_TO_CANON = {"Inward": "Cognitive", "Outward": "Energy", "Relationship": "Relational", "Relational": "Relational"}
+
 person_scales = aggregate_to_scales(responses, spec)
-missing = [d for d in ALL_DIMS + SELF_SCALES if np.isnan(person_scales.get(d, np.nan))]
+
+# Normalize any legacy keys to canonical before checking missing
+legacy_hits = [k for k in list(person_scales.keys()) if k in LEGACY_TO_CANON]
+for k in legacy_hits:
+    canon_k = LEGACY_TO_CANON[k]
+    if np.isnan(person_scales.get(canon_k, np.nan)):
+        person_scales[canon_k] = person_scales[k]
+    person_scales.pop(k, None)
+
+missing = [d for d in REQ_DIMS if np.isnan(person_scales.get(d, np.nan))]
 if missing:
     st.error(f"Missing responses for: {missing}")
     st.stop()
 
-# Norms (optional)
+# ====================== Norms (optional) with canonical rename (PATCH #2) ======================
+
 norms_df = None
 if norms_up is not None:
     try:
         norms_df = pd.read_csv(norms_up)
+        ren = {"Inward": "Cognitive", "Outward": "Energy", "Relationship": "Relational", "Relational": "Relational"}
+        have = [c for c in ren if c in norms_df.columns]
+        if have:
+            norms_df = norms_df.rename(columns={c: ren[c] for c in have})
     except Exception as e:
         st.error(f"Failed to read norms.csv: {e}"); st.stop()
 
-# Score
+# ====================== Score ======================
+
 try:
     z = zparams_from_norms_or_single(person_scales, norms_df)
     arch_mz, arch_std = prepare_archetype_pieces(z)
