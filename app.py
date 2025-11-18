@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-# PDF (ReportLab) – optional to avoid crashing when not installed
+# PDF (ReportLab) – optional
 try:
     from reportlab.lib.pagesizes import LETTER
     from reportlab.lib import colors
@@ -30,10 +30,7 @@ MOTIVATIONS: List[str] = [
     "Relational_Balance", "Thymos", "Eros",
 ]
 STRATEGIES: List[str] = ["Conform", "Control", "Flow", "Risk"]
-
-# Final orientations (no Inward/Outward anywhere)
 ORIENTATIONS: List[str] = ["Cognitive", "Energy", "Relational", "Surrender"]
-
 SELF_SCALES: List[str] = ["Self_Insight", "Self_Serving_Bias"]
 
 ALL_DIMS: List[str] = MOTIVATIONS + STRATEGIES + ORIENTATIONS
@@ -49,7 +46,6 @@ DEFAULT_DOMAIN_MAP = {
 # ====================== Header normalization ======================
 
 HEADER_TO_CANON = {
-    # motivations
     "sattva":"Sattva","rajas":"Rajas","tamas":"Tamas",
     "prajna":"Prajna","prajna logos":"Prajna","prajna-logos":"Prajna",
     "personal unconscious":"Personal_Unconscious","personal_unconscious":"Personal_Unconscious","pers.u":"Personal_Unconscious","pers u":"Personal_Unconscious",
@@ -57,12 +53,9 @@ HEADER_TO_CANON = {
     "cheng":"Cheng","wu wei":"Wu_Wei","wu_wei":"Wu_Wei","anatta":"Anatta",
     "relational balance":"Relational_Balance","relational_balance":"Relational_Balance","rel.bal":"Relational_Balance","rel bal":"Relational_Balance",
     "thymos":"Thymos","eros":"Eros",
-    # strategies
     "conform":"Conform","control":"Control","flow":"Flow","risk":"Risk",
-    # orientations (canonical + legacy aliases)
     "cognitive":"Cognitive","energy":"Energy","relational":"Relational","relationship":"Relational","relationship value":"Relational","surrender":"Surrender",
     "inward":"Cognitive","outward":"Energy",
-    # self-scales
     "self insight":"Self_Insight","self_insight":"Self_Insight","self-insight":"Self_Insight","self–insight":"Self_Insight",
     "self serving bias":"Self_Serving_Bias","self-serving bias":"Self_Serving_Bias","self_serving_bias":"Self_Serving_Bias",
 }
@@ -89,7 +82,6 @@ COLUMN_NORMALIZATION = {
     "Anatta":"Anatta","Rel.Bal":"Relational_Balance","Relational Balance":"Relational_Balance","Relational_Balance":"Relational_Balance",
     "Thymos":"Thymos","Eros":"Eros",
     "Conform":"Conform","Control":"Control","Flow":"Flow","Risk":"Risk",
-    # legacy -> canonical orientations
     "Outward":"Energy","Inward":"Cognitive","Relational":"Relational","Relationship":"Relational","Surrender":"Surrender",
 }
 def normalize_centroid_headers(df: pd.DataFrame) -> pd.DataFrame:
@@ -103,33 +95,19 @@ _ARC_ROWS = [
     "Hayabusa (Falcon)","Arachna (Spider)","Tempus (Hourglass)","Simia (Monkey)",
     "Polvo (Octopus)","Tigre (Tiger)","Enguia (Eel)","Dacia (Nomad)",
 ]
-
-# Columns: motivations..., Conform, Control, Flow, Risk, Outward, Inward, Surrender, Relational
 _ARC_RAW = pd.DataFrame(
     [
-        # Lucerna → Energy peak
         [4.8,6.8,3.8,6.0,4.7,4.5,5.0,4.9,4.3,4.7,6.2,5.0, 4.5,4.8,6.0,4.2, 6.8,4.6,4.6,5.2],
-        # Arbor → Relational peak (top-3 group)
         [6.4,4.5,4.7,4.4,4.5,4.8,6.0,4.8,4.3,6.7,5.0,5.3, 6.0,4.8,4.2,3.8, 4.9,4.9,5.1,6.5],
-        # Sharin → Relational peak (highest)
         [5.0,6.2,4.2,4.8,4.5,4.7,5.4,5.8,4.5,5.3,6.5,5.0, 5.5,4.8,6.0,4.5, 5.2,4.7,5.2,6.7],
-        # Keras → Surrender peak (highest)
         [4.8,6.2,5.7,4.8,4.4,4.5,6.7,4.7,4.0,4.5,5.2,4.4, 4.3,6.0,4.5,5.8, 5.0,4.6,6.7,4.6],
-        # Hayabusa → Cognitive peak (highest)
         [4.6,5.3,4.8,4.7,6.7,4.5,6.3,4.4,4.2,4.7,5.7,4.4, 5.8,6.0,4.3,4.2, 5.2,6.7,4.8,4.9],
-        # Arachna → Energy peak (third)
         [4.2,4.8,6.5,4.5,4.7,6.3,4.3,4.8,6.4,4.2,4.8,4.5, 3.8,4.3,4.8,6.0, 6.6,4.8,4.9,4.3],
-        # Tempus → Cognitive peak (second)
         [6.2,5.0,4.3,6.6,5.3,5.0,6.1,4.8,4.5,4.9,4.8,4.7, 4.5,6.0,5.8,4.3, 5.1,6.6,5.1,4.9],
-        # Simia → Surrender peak (second)
         [4.8,5.8,4.2,4.6,4.7,4.8,4.6,6.5,4.3,5.0,5.0,6.2, 4.0,4.3,6.0,4.8, 5.0,4.7,6.6,5.6],
-        # Polvo → Surrender peak (third)
         [4.6,4.7,5.5,6.3,5.4,5.1,4.8,4.5,6.4,4.4,4.6,4.5, 4.8,4.8,4.2,4.0, 4.6,4.8,6.5,4.4],
-        # Tigre → Energy peak (second)
         [6.5,6.2,4.4,4.9,4.7,5.8,4.9,5.6,4.3,4.8,4.8,4.7, 3.9,4.7,4.8,6.0, 6.7,4.7,4.9,4.8],
-        # Enguia → Relational peak (second)
         [6.3,4.7,4.3,4.5,4.8,4.9,4.8,5.0,4.4,6.5,5.2,6.7, 4.6,4.4,5.8,4.3, 5.3,4.9,5.3,6.6],
-        # Dacia → Cognitive peak (third)
         [4.8,6.5,4.5,5.6,4.8,6.7,4.7,5.1,5.2,4.6,6.1,5.5, 4.2,4.8,5.8,5.7, 5.0,6.5,5.0,5.1],
     ],
     index=_ARC_ROWS,
@@ -140,7 +118,6 @@ _ARC_RAW = pd.DataFrame(
 )
 ARCHETYPE_CENTROIDS = normalize_centroid_headers(_ARC_RAW)
 
-# --- Sanity check: orientation top-3 peaks as specified ---
 def _check_orientation_peaks(centroids: pd.DataFrame) -> None:
     expected_order = {
         "Energy":     ["Lucerna (Lantern)", "Tigre (Tiger)", "Arachna (Spider)"],
@@ -150,26 +127,20 @@ def _check_orientation_peaks(centroids: pd.DataFrame) -> None:
     }
     problems = []
     for col, want in expected_order.items():
-        if col not in centroids.columns:
-            problems.append(f"Missing orientation column: {col}")
-            continue
         top3 = centroids[col].nlargest(3).index.tolist()
         want_set, top_set = set(want), set(top3)
-        missing = list(want_set - top_set)
-        extra   = list(top_set - want_set)
+        missing = list(want_set - top_set); extra = list(top_set - want_set)
         order_ok = (not missing and not extra and top3 == want)
         if missing or extra or not order_ok:
             msg = f"**{col}** expected: {want} | actual top-3: {top3}"
             if missing: msg += f" | missing: {missing}"
             if extra:   msg += f" | unexpected: {extra}"
-            if not order_ok and not (missing or extra):
-                msg += " | note: membership matches but order differs"
+            if not order_ok and not (missing or extra): msg += " | note: membership matches but order differs"
             problems.append(msg)
     if problems:
         st.warning("Centroid orientation sanity check failed:\n\n- " + "\n- ".join(problems))
     else:
         st.success("Centroid orientation sanity check passed for Energy, Cognitive, Surrender, Relational.")
-
 _check_orientation_peaks(ARCHETYPE_CENTROIDS)
 
 # ====================== Scoring engine ======================
@@ -215,51 +186,106 @@ def normalize_probs(v: np.ndarray) -> np.ndarray:
     s = float(v.sum())
     return v/s if s>0 else np.full_like(v, 1.0/len(v))
 
-def quadrant(z_control: float, z_flow: float, z_conform: float, z_risk: float) -> Tuple[str, Dict[str,float]]:
-    x, y = z_control - z_flow, z_conform - z_risk
-    if x>=0 and y>=0: lab="Controlled–Conformist"
-    elif x>=0 and y<0: lab="Controlled–Risk"
-    elif x<0 and y>=0: lab="Flow–Conformist"
-    else: lab="Flow–Risk"
-    return lab, {"axis_CF": x, "axis_CR": y}
+def quadrant_label_from_pair(a: str, b: str) -> str:
+    pair = {a, b}
+    if "Control" in pair and "Conform" in pair: return "Controlled–Conformist"
+    if "Control" in pair and "Risk"   in pair: return "Controlled–Risk"
+    if "Flow"    in pair and "Conform" in pair: return "Flow–Conformist"
+    if "Flow"    in pair and "Risk"    in pair: return "Flow–Risk"
+    # fallback (shouldn't happen)
+    return "Mixed"
+
+def choose_pair_from_top2(str_vals: Dict[str, float]) -> Tuple[str, str]:
+    sorted_str = sorted(str_vals.items(), key=lambda kv: (-kv[1], kv[0]))
+    s1, s2 = sorted_str[0][0], sorted_str[1][0]
+    axis_h = {"Control", "Flow"}; axis_v = {"Conform", "Risk"}
+    if (s1 in axis_h and s2 in axis_v) or (s2 in axis_h and s1 in axis_v):
+        return s1, s2
+    # if both on same axis, take best from the other axis
+    if s1 in axis_h and s2 in axis_h:
+        best_other = max(axis_v, key=lambda k: str_vals[k])
+        return s1, best_other
+    if s1 in axis_v and s2 in axis_v:
+        best_other = max(axis_h, key=lambda k: str_vals[k])
+        return s1, best_other
+    return s1, s2
 
 def domain_means(row: pd.Series) -> Dict[str,float]:
     return {d: float(np.nanmean([row[k] for k in ks])) for d, ks in DEFAULT_DOMAIN_MAP.items()}
 
-def score_single(person: pd.Series, z: ZParams, arch: pd.DataFrame, arch_mz: pd.DataFrame, arch_std: pd.DataFrame) -> Dict:
+def compute_confidence(person: pd.Series) -> Tuple[float, str]:
+    # raw 1–7 means (no norms)
+    si = float(person["Self_Insight"]); ssb = float(person["Self_Serving_Bias"])
+    SIp = (si - 1.0) / 6.0
+    Biasp = 1.0 - (ssb - 1.0) / 6.0  # lower SSB → higher confidence
+    C = 0.7*SIp + 0.3*Biasp
+    level = "High" if C >= 0.67 else ("Moderate" if C >= 0.45 else "Low")
+    return float(C), level
+
+def score_single(
+    person: pd.Series,
+    z: ZParams,
+    arch: pd.DataFrame,
+    arch_mz: pd.DataFrame,
+    arch_std: pd.DataFrame,
+) -> Dict:
+    # Z features for similarity math
     z_mot = z.zrow(person, MOTIVATIONS)
     z_str = z.zrow(person, STRATEGIES)
     z_ori = z.zrow(person, ORIENTATIONS)
-    z_pat = intra_person_z(np.array([person[m] for m in MOTIVATIONS], float))
-    z_SI  = (person["Self_Insight"]-z.mean["Self_Insight"])/z.std["Self_Insight"]
-    z_SSB = (person["Self_Serving_Bias"]-z.mean["Self_Serving_Bias"])/z.std["Self_Serving_Bias"]
-    C = 0.7*sigmoid(float(z_SI)) + 0.3*(1.0 - 2.0*abs(sigmoid(float(z_SSB))-0.5))  # why: high SI + moderate SSB ⇒ higher trust
 
+    # Motivation pattern (within-person)
+    z_pat = intra_person_z(np.array([person[m] for m in MOTIVATIONS], float))
+
+    # Confidence from raw SI/SSB (rule-based)
+    C, C_level = compute_confidence(person)
+
+    # Similarity loop
     names = list(arch.index); vals=[]
     for name in names:
         ap = arch_mz.loc[name, MOTIVATIONS].to_numpy(float)
         R = pearson(z_pat, ap); Rp = (R+1)/2
+
         am = arch_std.loc[name, MOTIVATIONS].to_numpy(float)
         as_ = arch_std.loc[name, STRATEGIES].to_numpy(float)
         ao = arch_std.loc[name, ORIENTATIONS].to_numpy(float)
+
         Dall = euclid(np.concatenate([z_mot,z_str,z_ori]), np.concatenate([am,as_,ao]))
         S_abs = 1/(1+Dall); S_A = 0.65*Rp + 0.35*S_abs
+
         DS = euclid(z_str, as_); SS = 1/(1+DS)
         DO = euclid(z_ori, ao); SO = 1/(1+DO)
+
         S_total = W_MOT_ABS*S_A + W_STRAT_MATCH*SS + W_ORIENT_MATCH*SO
         vals.append(S_total*(0.75+0.25*C))
 
     probs = normalize_probs(np.array(vals,float))
     order = np.argsort(-probs); top3=[(names[i], float(probs[i])) for i in order[:3]]
-    qc, axes = quadrant(
-        z_str[STRATEGIES.index("Control")],
-        z_str[STRATEGIES.index("Flow")],
-        z_str[STRATEGIES.index("Conform")],
-        z_str[STRATEGIES.index("Risk")]
-    )
-    return {"probs": {names[i]: float(probs[i]) for i in range(len(names))}, "top3": top3,
-            "quadrant": qc, "quadrant_axes": axes, "confidence": float(C),
-            "domain_centroids": domain_means(person)}
+
+    # Quadrant & subtype from top two strategies
+    str_vals = {s: float(person[s]) for s in STRATEGIES}
+    sA, sB = choose_pair_from_top2(str_vals)
+    quadrant = quadrant_label_from_pair(sA, sB)
+    subtype = f"{sA} + {sB}"
+
+    # Axes (for reference): use within-person z of strategies
+    raw_str = np.array([person[s] for s in STRATEGIES], float)
+    z_str_personal = intra_person_z(raw_str)
+    axes = {
+        "axis_CF": z_str_personal[STRATEGIES.index("Control")] - z_str_personal[STRATEGIES.index("Flow")],
+        "axis_CR": z_str_personal[STRATEGIES.index("Conform")] - z_str_personal[STRATEGIES.index("Risk")],
+    }
+
+    return {
+        "probs": {names[i]: float(probs[i]) for i in range(len(names))},
+        "top3": top3,
+        "quadrant": quadrant,
+        "strategy_subtype": subtype,
+        "quadrant_axes": axes,
+        "confidence": float(C),
+        "confidence_level": C_level,
+        "domain_centroids": domain_means(person),
+    }
 
 # ====================== TXT parser ======================
 
@@ -353,7 +379,9 @@ def prepare_archetype_pieces(z: ZParams) -> Tuple[pd.DataFrame,pd.DataFrame]:
 
 def to_result_df(res: Dict, pid: str) -> pd.DataFrame:
     (p1,p1v),(p2,p2v),(p3,p3v) = res["top3"]
-    row = {"participant_id": pid,"confidence": res["confidence"],"quadrant": res["quadrant"],
+    row = {"participant_id": pid,
+           "confidence": res["confidence"], "confidence_level": res["confidence_level"],
+           "quadrant": res["quadrant"], "strategy_subtype": res["strategy_subtype"],
            "axis_CF": res["quadrant_axes"]["axis_CF"],"axis_CR": res["quadrant_axes"]["axis_CR"],
            "primary": p1,"primary_prob": p1v,"secondary": p2,"secondary_prob": p2v,"tertiary": p3,"tertiary_prob": p3v,
            **res["domain_centroids"], **res["probs"]}
@@ -388,7 +416,7 @@ with st.sidebar:
     ranking_mode = st.selectbox("Motivation ranking metric", ["Raw means (1–7)", "Z-scores (vs norms)"])
     st.caption("Two-column layout. Labels update live. Order is randomized per participant.")
 
-# Load spec (repo first; uploader overrides if provided)
+# Load spec
 try:
     spec = parse_txt_questions(q_up.read().decode("utf-8")) if q_up is not None else load_questions_from_repo()
 except Exception as e:
@@ -398,19 +426,14 @@ except Exception as e:
 rep = spec.get("parse_report", {})
 if rep.get("unknown_headers") or rep.get("items_without_dim"):
     with st.expander("Parsing report (click to review)"):
-        if rep.get("unknown_headers"):
-            st.warning("Unknown headers (not matched to a dimension):")
-            st.json(rep["unknown_headers"])
-        if rep.get("items_without_dim"):
-            st.warning("Items skipped (no active dimension):")
-            st.json(rep["items_without_dim"])
+        if rep.get("unknown_headers"): st.json(rep["unknown_headers"])
+        if rep.get("items_without_dim"): st.json(rep["items_without_dim"])
 
 items: List[Dict] = list(spec.get("questions", []))
 if not items:
-    st.error("No items parsed. Check your headers and items.")
-    st.stop()
+    st.error("No items parsed. Check your headers and items."); st.stop()
 
-# Stable per-user shuffle (seeded by participant_id + spec)
+# Stable per-user shuffle
 def stable_shuffle(items: List[Dict], pid: str, spec_obj: Dict) -> List[Dict]:
     spec_bytes = json.dumps({k:v for k,v in spec_obj.items() if k != "parse_report"}, sort_keys=True).encode("utf-8")
     seed_hex = hashlib.sha256((pid + "|").encode("utf-8") + spec_bytes).hexdigest()[:16]
@@ -424,8 +447,7 @@ if "shuffle_meta" not in st.session_state or st.session_state.shuffle_meta != (p
     st.session_state.shuffled_items = stable_shuffle(items, participant_id, spec)
 shuffled = st.session_state.shuffled_items
 
-# ============ Live label mapping ============
-
+# Live label mapping
 def value_to_label(item: Dict, val: int) -> str:
     vmin = int(item.get("min", 1)); vmax = int(item.get("max", 7)); step = int(item.get("step", 1))
     labels = item.get("labels"); idx = (val - vmin) // step
@@ -438,8 +460,7 @@ def value_to_label(item: Dict, val: int) -> str:
         return [L, f"Somewhat {L}", "Neutral", f"Somewhat {R}", R][idx]
     return ""
 
-# ============ Render (live updates) ============
-
+# Render questionnaire
 responses: Dict[str,int] = {}
 scale_defaults = spec.get("scale", {"min":1,"max":7,"step":1})
 
@@ -451,8 +472,7 @@ for it in shuffled:
     default_val = vmin + ((vmax - vmin) // (2 * step)) * step
 
     c1, c2 = st.columns([2, 3])
-    with c1:
-        st.markdown(f"**{it['text']}**")
+    with c1: st.markdown(f"**{it['text']}**")
     with c2:
         current_val = st.session_state.get(it["id"], default_val)
         curr_label = value_to_label(it, current_val)
@@ -460,32 +480,30 @@ for it in shuffled:
             st.markdown(f"<div style='font-size:0.9rem; opacity:0.8; margin-bottom:-0.5rem'><b>{curr_label}</b></div>", unsafe_allow_html=True)
         elif it.get("L") or it.get("R"):
             st.markdown(f"<div style='font-size:0.9rem; opacity:0.7; margin-bottom:-0.5rem'><b>{it.get('L','')}</b></div>", unsafe_allow_html=True)
-
         val = st.slider(label="", min_value=vmin, max_value=vmax, step=step,
                         value=current_val, key=it["id"],
-                        help=None if not (it.get("L") or it.get("R")) else f"{it.get('L','')}  ↔  {it.get('R','')}",)
+                        help=None if not (it.get("L") or it.get("R")) else f"{it.get('L','')}  ↔  {it.get('R','')}")
     st.divider()
     responses[it["id"]] = val
 
-compute = st.button("Compute Results")
+compute = st.button("Compute Results"); 
 if not compute: st.stop()
 
-# ====================== Validation with canonical-only requirements + auto-derive orientations ======================
+# ====================== Validation + auto-derive orientations ======================
 
 REQ_DIMS = MOTIVATIONS + STRATEGIES + ["Cognitive", "Energy", "Relational", "Surrender"] + SELF_SCALES
 LEGACY_TO_CANON = {"Inward": "Cognitive", "Outward": "Energy", "Relationship": "Relational", "Relational": "Relational"}
 
 person_scales = aggregate_to_scales(responses, spec)
+# legacy → canonical
+for k in list(person_scales.keys()):
+    if k in LEGACY_TO_CANON:
+        c = LEGACY_TO_CANON[k]
+        if np.isnan(person_scales.get(c, np.nan)):
+            person_scales[c] = person_scales[k]
+        person_scales.pop(k, None)
 
-# Map any legacy keys to canonical before checking
-legacy_hits = [k for k in list(person_scales.keys()) if k in LEGACY_TO_CANON]
-for k in legacy_hits:
-    canon_k = LEGACY_TO_CANON[k]
-    if np.isnan(person_scales.get(canon_k, np.nan)):
-        person_scales[canon_k] = person_scales[k]
-    person_scales.pop(k, None)
-
-# --- Auto-derive orientations from motivations if absent ---
+# derive orientations if missing
 def derive_orientations(ps: Dict[str, float]) -> None:
     if np.isnan(ps.get("Energy", np.nan)):
         ps["Energy"] = float(np.nanmean([ps.get(m, np.nan) for m in DEFAULT_DOMAIN_MAP["Energy"]]))
@@ -495,16 +513,13 @@ def derive_orientations(ps: Dict[str, float]) -> None:
         ps["Relational"] = float(np.nanmean([ps.get(m, np.nan) for m in DEFAULT_DOMAIN_MAP["Relational"]]))
     if np.isnan(ps.get("Surrender", np.nan)):
         ps["Surrender"] = float(np.nanmean([ps.get(m, np.nan) for m in DEFAULT_DOMAIN_MAP["Integrative"]]))
-
 derive_orientations(person_scales)
 
-# Now validate
 missing = [d for d in REQ_DIMS if np.isnan(person_scales.get(d, np.nan))]
 if missing:
-    st.error(f"Missing responses for: {missing}")
-    st.stop()
+    st.error(f"Missing responses for: {missing}"); st.stop()
 
-# ====================== Norms (optional) with canonical rename ======================
+# ====================== Norms (optional) ======================
 
 norms_df = None
 if norms_up is not None:
@@ -520,14 +535,14 @@ if norms_up is not None:
 # ====================== Score ======================
 
 try:
-    z = zparams_from_norms_or_single(person_scales, norms_df)
+    z = ZParams.fit(norms_df, list(ALL_REQ_FOR_Z)) if norms_df is not None else ZParams.fit(pd.DataFrame([person_scales])[ALL_REQ_FOR_Z], list(ALL_REQ_FOR_Z))
     arch_mz, arch_std = prepare_archetype_pieces(z)
     person_row = pd.Series({**person_scales, "participant_id": participant_id})
     res = score_single(person_row, z, ARCHETYPE_CENTROIDS, arch_mz, arch_std)
 except Exception as e:
     st.error(str(e)); st.stop()
 
-# ====================== Report: Top-3 + ranking + downloads ======================
+# ====================== Report & downloads ======================
 
 left, right = st.columns([1,1])
 
@@ -536,7 +551,6 @@ probs = pd.Series(res["probs"]).sort_values(ascending=False).rename("probability
 mix = top3_percentages(res["top3"])
 mix_text = " · ".join([f"{pct}% {name}" for name, pct in mix])
 
-# Motivation ranking (raw or z)
 if ranking_mode.startswith("Z-scores"):
     mot_series = pd.Series({m: (person_scales[m]-z.mean[m])/z.std[m] for m in MOTIVATIONS}).sort_values(ascending=False).rename("z")
     mot_df = mot_series.to_frame()
@@ -552,12 +566,14 @@ with left:
     st.metric("Tertiary", p3, f"{p3v:.3f}")
     st.markdown(f"**Top-3 mix:** {mix_text}")
 
-    st.subheader("🧭 Strategic Quadrant")
-    st.write(f"**{res['quadrant']}**")
+    st.subheader("🧭 Strategy Profile")
+    st.write(f"**Quadrant:** {res['quadrant']}")
+    st.write(f"**Subtype (top two):** {res['strategy_subtype']}")
     st.caption(f"axis_CF = {res['quadrant_axes']['axis_CF']:.2f} | axis_CR = {res['quadrant_axes']['axis_CR']:.2f}")
 
     st.subheader("🔒 Confidence")
-    st.metric("Confidence Index", f"{res['confidence']:.3f}")
+    st.metric("Confidence Index", f"{res['confidence']:.3f}", help="0–1 composite from SI (↑) and SSB (↓)")
+    st.write(f"**Level:** {res['confidence_level']}")
 
     st.subheader("📥 Download Full Scores (CSV)")
     out_df = to_result_df(res, participant_id)
@@ -582,8 +598,10 @@ if HAS_REPORTLAB:
         top3: List[Tuple[str,float]],
         mix: List[Tuple[str,int]],
         quadrant_label: str,
+        subtype: str,
         axes: Dict[str,float],
         confidence: float,
+        confidence_level: str,
         probs_series: pd.Series,
         mot_df: pd.DataFrame,
         ranking_mode_label: str
@@ -605,10 +623,11 @@ if HAS_REPORTLAB:
         story.append(Paragraph(f"Top-3 mix: <b>{mix_line}</b>", styles["Normal"]))
         story.append(Spacer(1, 8))
 
-        story.append(Paragraph("<b>Strategic Quadrant</b>", styles["Heading2"]))
-        story.append(Paragraph(f"{quadrant_label}", styles["Normal"]))
+        story.append(Paragraph("<b>Strategy Profile</b>", styles["Heading2"]))
+        story.append(Paragraph(f"Quadrant: {quadrant_label}", styles["Normal"]))
+        story.append(Paragraph(f"Subtype (top two): {subtype}", styles["Normal"]))
         story.append(Paragraph(f"axis_CF = {axes['axis_CF']:.2f} | axis_CR = {axes['axis_CR']:.2f}", styles["Normal"]))
-        story.append(Paragraph(f"Confidence Index: <b>{confidence:.3f}</b>", styles["Normal"]))
+        story.append(Paragraph(f"Confidence Index: <b>{confidence:.3f}</b> ({confidence_level})", styles["Normal"]))
         story.append(Spacer(1, 8))
 
         story.append(Paragraph("<b>Archetype Probabilities</b>", styles["Heading2"]))
@@ -650,8 +669,10 @@ if HAS_REPORTLAB:
         top3=res["top3"],
         mix=mix,
         quadrant_label=res["quadrant"],
+        subtype=res["strategy_subtype"],
         axes=res["quadrant_axes"],
         confidence=res["confidence"],
+        confidence_level=res["confidence_level"],
         probs_series=probs,
         mot_df=mot_df[["rank"] + (["z"] if "z" in mot_df.columns else ["mean"])],
         ranking_mode_label=("Z-scores" if ranking_mode.startswith("Z") else "Raw means (1–7)")
@@ -659,5 +680,6 @@ if HAS_REPORTLAB:
     st.download_button("📄 Download PDF report", data=pdf_bytes,
                        file_name=f"{participant_id}_report.pdf", mime="application/pdf")
 else:
-    st.info("📄 PDF export disabled (install `reportlab` to enable). You can still download CSVs above.")
+    st.info("📄 PDF export disabled (install `reportlab`` to enable). You can still download CSVs above.")
+
 
