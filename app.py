@@ -137,8 +137,12 @@ class ZParams:
         return np.array([(row[c] - self.mean[c]) / self.std[c] for c in cols], float)
 
 def intra_person_z(vals: np.ndarray) -> np.ndarray:
-    mu, sd = float(vals.mean()), float(vals.std()) + EPS
+    mu = float(vals.mean())
+    sd = float(vals.std())
+    if sd < 1e-6:
+        return np.zeros_like(vals)  # All values are effectively the same
     return (vals - mu) / sd
+
 
 def rowwise_motivation_z(arch: pd.DataFrame) -> pd.DataFrame:
     df = arch.copy()
@@ -515,7 +519,10 @@ def score_single(
 
     quadrant, subtype = compute_quadrant_subtype(strategy_means=str_now, tol=0.05)
 
-    print("Raw strategy scores:", {s: person[s] for s in STRATEGIES})
+    print("Raw strategy scores:", {s: person[s] for s in STRATEGIES}
+    print("STRATEGY RAW:", {s: person[s] for s in STRATEGIES})
+    print("STRATEGY Z-SCORES:", dict(zip(STRATEGIES, z_str_personal)))
+ 
 
     raw_str = np.array([person[s] for s in STRATEGIES], float)
     z_str_personal = intra_person_z(raw_str)
