@@ -254,13 +254,6 @@ def prepare_archetype_pieces(z: ZParams) -> Tuple[pd.DataFrame,pd.DataFrame]:
     return arch_mz, arch_std
 
 # ---------- Scoring ----------
-def euclid(a: np.ndarray, b: np.ndarray) -> float:
-    return float(np.sqrt(np.sum((a-b)**2)))
-
-def normalize_probs(v: np.ndarray) -> np.ndarray:
-    s = float(v.sum())
-    return v/s if s>0 else np.full_like(v, 1.0/len(v))
-
 @dataclass
 class ScorePieces:
     probs: Dict[str,float]
@@ -386,19 +379,13 @@ if missing_dims:
     st.error(f"Missing responses for: {missing_dims}")
     st.stop()
 
-# Confidence 
+# ---------- Confidence (SSB reversed; SI normal) ----------
 def compute_confidence_from_means(si: float, ssb: float) -> tuple[float, str]:
-    """
-    Confidence is high when Self Insight is high and Self Serving Bias is low.
-    - SI mapped normally: 1 -> 0.0, 7 -> 1.0
-    - SSB mapped *reversed*: 1 -> 1.0, 7 -> 0.0   # why: lower SSB increases confidence
-    """
     si_n  = (float(si)  - 1.0) / 6.0
-    ssb_n = (7.0 - float(ssb)) / 6.0  # <-- reversed scoring for SSB
+    ssb_n = (7.0 - float(ssb)) / 6.0  # reversed SSB
     C = max(0.0, min(1.0, 0.5 * (si_n + ssb_n)))
     level = "High" if C >= 2/3 else ("Moderate" if C >= 0.45 else "Low")
     return C, level
-
 
 si_vals  = direct_values_for_dim(responses, spec, "Self_Insight")
 ssb_vals = direct_values_for_dim(responses, spec, "Self_Serving_Bias")
@@ -438,12 +425,15 @@ probs = pd.Series(res.probs).sort_values(ascending=False).rename("probability")
 (p1,p1v),(p2,p2v),(p3,p3v) = res.top3
 mix = top3_percentages(res.top3); mix_text = " · ".join([f"{pct}% {name}" for name, pct in mix])
 
+# Motivation ranking (for inline + right panel)
 if ranking_mode.startswith("Z-scores"):
     mot_series = pd.Series({m: (person_scales[m]-z.mean[m])/z.std[m] for m in MOTIVATIONS}).sort_values(ascending=False).rename("z")
     mot_df = mot_series.to_frame()
+    score_col_name = "z"
 else:
     mot_series = pd.Series({m: person_scales[m] for m in MOTIVATIONS}).sort_values(ascending=False).rename("mean")
     mot_df = mot_series.to_frame()
+    score_col_name = "mean"
 mot_df["rank"] = np.arange(1, len(mot_df)+1)
 
 left, right = st.columns([1,1])
@@ -463,6 +453,13 @@ with left:
     st.metric("Confidence Index (0–1)", f"{C:.3f}")
     st.caption(f"Self Insight mean: {si_mean:.2f} · Self Serving Bias mean: {ssb_mean:.2f} · Level: {C_level}")
 
+    # >>> NEW: Inline, full 12-row motivation ranking (no scroll) <<<
+    st.subheader("🧩 Motivation Ranking (Top 12)")
+    inline_df = mot_df[[score_col_name]].copy().reset_index().rename(columns={"index":"Motivation", score_col_name: ("Z" if score_col_name=="z" else "Mean")})
+    inline_df.insert(0, "Rank", np.arange(1, len(inline_df)+1))
+    # Render as static table to avoid scroll
+    st.table(inline_df)
+
     st.subheader("📥 Download Full Scores (CSV)")
     out_df = pd.DataFrame([{ "participant_id": participant_id, **res.probs }])
     buf = StringIO(); out_df.to_csv(buf, index=False)
@@ -472,8 +469,9 @@ with right:
     st.subheader("📊 Archetype Probabilities")
     st.dataframe(probs.to_frame())
 
-    st.subheader(f"🧩 Motivation Ranking — {'Z' if ranking_mode.startswith('Z') else 'Raw'}")
-    st.dataframe(mot_df[["rank"] + ([ "z" ] if "z" in mot_df.columns else [ "mean" ])])
+    st.subheader(f"🧩 Motivation Ranking — {'Z' if score_col_name=='z' else 'Raw'}")
+    st.dataframe(mot_df[["rank", score_col_name]].rename(columns={score_col_name: ("Z" if score_col_name=="z" else "Mean")}))
+
     mot_buf = StringIO(); mot_df.reset_index(names="motivation").to_csv(mot_buf, index=False)
     st.download_button("Download motivation_ranking.csv", data=mot_buf.getvalue(), file_name=f"{participant_id}_motivation_ranking.csv", mime="text/csv")
 
@@ -511,6 +509,25 @@ if HAS_REPORTLAB:
         story.append(Paragraph(f"Self Insight mean: {si_mean:.2f} · Self Serving Bias mean: {ssb_mean:.2f}", styles["Normal"]))
         story.append(Spacer(1, 8))
 
+        # Motivation ranking table (all 12)
+        story.append(Paragraph(f"<b>Motivation Ranking — {ranking_mode_label}</b>", styles["Heading2"]))
+        col_label = "Z" if "z" in mot_df.columns else "Mean"
+        mot_tbl_data = [["Rank", "Motivation", col_label]]
+        mot_iter = mot_df.reset_index().rename(columns={"index":"Motivation"})
+        for i, (_, r) in enumerate(mot_iter.iterrows(), start=1):
+            mot_tbl_data.append([i, r["Motivation"], f"{float(r.get('z', r.get('mean'))):.3f}"])
+        mot_tbl = Table(mot_tbl_data, hAlign="LEFT")
+        mot_tbl.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
+            ('GRID', (0,0), (-1,-1), 0.25, colors.grey),
+            ('ALIGN', (0,0), (-1,0), 'CENTER'),
+            ('ALIGN', (2,1), (2,-1), 'RIGHT'),
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ]))
+        story.append(mot_tbl)
+
+        story.append(Spacer(1, 8))
+
         story.append(Paragraph("<b>Archetype Probabilities</b>", styles["Heading2"]))
         probs_tbl_data = [["Archetype", "Probability"]]
         for name, val in probs_series.items():
@@ -523,22 +540,6 @@ if HAS_REPORTLAB:
             ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
         ]))
         story.append(probs_tbl)
-        story.append(Spacer(1, 8))
-
-        story.append(Paragraph(f"<b>Motivation Ranking — {ranking_mode_label}</b>", styles["Heading2"]))
-        col_label = "Z" if "z" in mot_df.columns else "Mean"
-        mot_tbl_data = [["Rank", "Motivation", col_label]]
-        mot_iter = mot_df.reset_index().rename(columns={"index":"Motivation"})
-        for _, r in mot_iter.iterrows():
-            mot_tbl_data.append([int(r["rank"]), r["Motivation"], f"{float(r[col_label.lower()]):.3f}"])
-        mot_tbl = Table(mot_tbl_data, hAlign="LEFT")
-        mot_tbl.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
-            ('GRID', (0,0), (-1,-1), 0.25, colors.grey),
-            ('ALIGN', (0,0), (-1,0), 'CENTER'),
-            ('ALIGN', (2,1), (2,-1), 'RIGHT'),
-            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ]))
         doc.build(story)
         return buf.getvalue()
 
@@ -547,8 +548,8 @@ if HAS_REPORTLAB:
         top3=res.top3,
         mix=mix,
         probs_series=probs,
-        mot_df=mot_df[["rank"] + (["z"] if "z" in mot_df.columns else ["mean"])],
-        ranking_mode_label=("Z-scores" if ranking_mode.startswith("Z") else "Raw means (1–7)"),
+        mot_df=mot_df[[score_col_name]].rename(columns={score_col_name: score_col_name}).sort_values(by=score_col_name, ascending=False),
+        ranking_mode_label=("Z-scores" if score_col_name=="z" else "Raw means (1–7)"),
         C=C, C_level=C_level, si_mean=si_mean, ssb_mean=ssb_mean,
         strategy_sub=sub,
     )
