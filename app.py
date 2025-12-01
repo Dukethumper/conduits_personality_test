@@ -10,6 +10,8 @@ from typing import Dict, List, Tuple, Optional
 import numpy as np
 import pandas as pd
 import streamlit as st
+import plotly.graph_objects as go
+import plotly.express as px
 
 # Optional PDF export
 try:
@@ -288,6 +290,74 @@ def score_single(person: pd.Series, z: "ZParams", arch: pd.DataFrame, arch_mz: p
     order = np.argsort(-probs); top3=[(names[i], float(probs[i])) for i in order[:3]]
     return ScorePieces(probs={names[i]: float(probs[i]) for i in range(len(names))}, top3=top3)
 
+def fig_blend_triangle(top3):
+    import numpy as np
+    A = np.array([0.0, 0.0]); B = np.array([1.0, 0.0]); C = np.array([0.5, np.sqrt(3)/2])
+    names = [top3[0][0], top3[1][0], top3[2][0]]
+    vals = np.array([top3[0][1], top3[1][1], top3[2][1]], float)
+    s = float(vals.sum()) or 1.0
+    w = vals / s
+    P = w[0]*A + w[1]*B + w[2]*C
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=[A[0],B[0],C[0],A[0]], y=[A[1],B[1],C[1],A[1]], mode="lines", line=dict(width=2)))
+    fig.add_trace(go.Scatter(x=[A[0],B[0],C[0]], y=[A[1],B[1],C[1]], mode="markers+text",
+                             marker=dict(size=10), text=[names[0],names[1],names[2]], textposition="top center"))
+    fig.add_trace(go.Scatter(x=[P[0]], y=[P[1]], mode="markers", marker=dict(size=14, symbol="star")))
+    fig.update_layout(title="Personality Blend Triangle", xaxis=dict(visible=False), yaxis=dict(visible=False),
+                      showlegend=False, height=350, margin=dict(l=10,r=10,t=40,b=10))
+    return fig
+
+def fig_strategy_compass(str_means, sub):
+    r = [str_means["Control"], str_means["Conform"], str_means["Flow"], str_means["Risk"], str_means["Control"]]
+    theta = ["Control","Conform","Flow","Risk","Control"]
+    fig = go.Figure()
+    fig.add_trace(go.Scatterpolar(r=r, theta=theta, fill='toself', name="Strategies"))
+    s1, s2 = sub["top_pair"]
+    ltxt = f"{sub['quadrant']} — {s1} {sub['percentages'][s1]*100:.0f}% + {s2} {sub['percentages'][s2]*100:.0f}% ({sub['leaning']})"
+    fig.update_layout(title="Control–Flow Compass",
+                      polar=dict(radialaxis=dict(range=[1,7], showticklabels=True)),
+                      height=350, margin=dict(l=10,r=10,t=40,b=10), showlegend=False,
+                      annotations=[dict(text=ltxt, x=0.5, y=1.15, xref="paper", yref="paper", showarrow=False)])
+    return fig
+
+def fig_confidence_curves(si_mean, ssb_mean, C):
+    import numpy as np
+    x = np.linspace(1,7,241); sigma = 1.2
+    pdf = lambda mu: np.exp(-0.5*((x-mu)/sigma)**2)
+    y_si, y_ssb = pdf(si_mean), pdf(ssb_mean)
+    y_si /= y_si.max() or 1.0; y_ssb /= y_ssb.max() or 1.0
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=x, y=y_si, mode="lines", name="Self Insight", fill='tozeroy', opacity=0.5))
+    fig.add_trace(go.Scatter(x=x, y=y_ssb, mode="lines", name="Self-Serving Bias", fill='tozeroy', opacity=0.5))
+    fig.update_layout(title=f"Confidence Calibration — Index: {C:.3f}",
+                      xaxis_title="Scale (1–7)", yaxis_title="Relative Density",
+                      height=350, margin=dict(l=10,r=10,t=40,b=10))
+    fig.add_annotation(text="Metacognitive Accuracy Zone = overlap", x=4, y=0.9, showarrow=False)
+    return fig
+
+def fig_motivation_spectrum(series, label):
+    s = series.sort_values(ascending=True)
+    fig = go.Figure(go.Bar(x=s.values, y=s.index, orientation='h'))
+    lo = 1 if s.min() >= 1 else min(1, float(s.min())-0.2)
+    hi = 7 if s.max() <= 7 else max(7, float(s.max())+0.2)
+    fig.update_layout(title=f"12-Bar Motivation Spectrum ({label})",
+                      xaxis=dict(range=[lo, hi]),
+                      height=420, margin=dict(l=80,r=10,t=40,b=10), showlegend=False)
+    return fig
+
+def fig_motivation_wheel(series, label):
+    import numpy as np
+    names = list(series.index)
+    vals = [float(series.get(n, np.nan)) for n in names]
+    theta = np.linspace(0, 360, num=len(names), endpoint=False)
+    fig = go.Figure()
+    fig.add_trace(go.Barpolar(r=vals, theta=theta, text=names,
+                              hovertext=[f"{n}: {v:.2f}" for n,v in zip(names, vals)], hoverinfo="text"))
+    fig.update_layout(title=f"Motivational Wheel ({label})",
+                      polar=dict(radialaxis=dict(range=[1,7])),
+                      height=420, margin=dict(l=10,r=10,t=40,b=10), showlegend=False)
+    return fig
+
 # ---------- UI ----------
 st.set_page_config(page_title="Motivational Archetypes – Test", page_icon="🧭", layout="wide")
 st.title("🧭 Motivational Archetypes – Test")
@@ -436,6 +506,8 @@ else:
     score_col_name = "mean"
 mot_df["rank"] = np.arange(1, len(mot_df)+1)
 
+mot_label = "Z-scores" if ranking_mode.startswith("Z-scores") else "Raw means (1–7)"
+
 left, right = st.columns([1,1])
 with left:
     st.subheader("🏆 Top Archetypes")
@@ -459,6 +531,18 @@ with left:
     inline_df.insert(0, "Rank", np.arange(1, len(inline_df)+1))
     # Render as static table to avoid scroll
     st.table(inline_df)
+
+with st.expander("🎨 Show visuals"):
+    st.plotly_chart(fig_blend_triangle(res.top3), use_container_width=True)
+    st.plotly_chart(fig_strategy_compass(str_means, sub), use_container_width=True)
+    st.plotly_chart(fig_confidence_curves(si_mean, ssb_mean, C), use_container_width=True)
+
+    tabs = st.tabs(["12-Bar Spectrum", "Motivational Wheel"])
+    with tabs[0]:
+        # mot_series is your already-sorted motivation series (raw or z)
+        st.plotly_chart(fig_motivation_spectrum(mot_series.rename("score"), mot_label), use_container_width=True)
+    with tabs[1]:
+        st.plotly_chart(fig_motivation_wheel(mot_series.rename("score"), mot_label), use_container_width=True)
 
     st.subheader("📥 Download Full Scores (CSV)")
     out_df = pd.DataFrame([{ "participant_id": participant_id, **res.probs }])
